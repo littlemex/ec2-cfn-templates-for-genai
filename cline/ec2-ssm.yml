@@ -26,9 +26,9 @@ Parameters:
     Default: us-east-1
     Description: AWS Region
   AmiId:
-    Type: AWS::EC2::Image::Id
-    Default: ami-084568db4383264d4
-    Description: Ubuntu Server 22.04 LTS (HVM),EBS General Purpose (SSD) Volume Type. Support available from Canonical (http://www.ubuntu.com/cloud/services).
+    Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
+    Default: '/aws/service/canonical/ubuntu/server/22.04/stable/current/amd64/hvm/ebs-gp2/ami-id'
+    Description: Latest Ubuntu Server 22.04 LTS (HVM),EBS General Purpose (SSD) Volume Type. Support available from Canonical (http://www.ubuntu.com/cloud/services).
 
   VpcCidr:
     Type: String
