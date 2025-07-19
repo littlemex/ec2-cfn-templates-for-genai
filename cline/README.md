@@ -88,23 +88,11 @@ graph TB
 export USERNAME=(各自で任意の値を入力 - アンダースコアは使用不可)
 ```
 
-### 1. ec2-ssm.yml を使用する場合
+### ec2-ssm.yml
 
 ```bash
 aws cloudformation deploy \
   --template-file ec2-ssm.yml \
-  --stack-name ai-workshop-${USERNAME} \
-  --parameter-overrides \
-    UserName=${USERNAME} \
-    Environment=dev \
-  --capabilities CAPABILITY_NAMED_IAM
-```
-
-### 2. ec2-ssm-default-vpc.yml を使用する場合
-
-```bash
-aws cloudformation deploy \
-  --template-file ec2-ssm-default-vpc.yml \
   --stack-name ai-workshop-${USERNAME} \
   --parameter-overrides \
     UserName=${USERNAME} \
@@ -227,26 +215,6 @@ aws cloudformation deploy \
 ```bash
 sudo cat /var/log/cloud-init-output.log
 ```
-
-### Docker と mise のインストールエラー
-
-UserData スクリプトの実行中に Docker や mise のインストールでエラーが発生した場合、以下の手順で手動インストールを行うことができます：
-
-1. このリポジトリに含まれる設定スクリプトをインスタンスにコピーします：
-   ```bash
-   sudo cp ./config.sh /tmp/
-   sudo chmod +x /tmp/config.sh
-   ```
-
-2. スクリプトを実行します：
-   ```bash
-   sudo /tmp/config.sh
-   ```
-
-3. 新しいシェルを開くか、以下のコマンドを実行して環境を更新します：
-   ```bash
-   source ~/.bashrc
-   ```
 
 ## セキュリティに関する注意事項
 
