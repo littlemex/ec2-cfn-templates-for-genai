@@ -126,26 +126,9 @@ aws cloudformation deploy \
    ```
    とエラーが出る場合は認証情報を確認し、数分待ちます。以前接続できない場合にはマネジメントコンソールからインスタンスを再起動してください。
 
-   b. port_forward.py スクリプトを使用する場合：
-   ```bash
-   cd workshops/ai-coding-workshop/cline/scripts
-   uv venv && source .venv/bin/activate && uv sync
-   # 必要に応じて config.yml にポートマッピングを追記してください
-   uv run port_forward.py --instance-id <インスタンス ID>
-   ```
-
-
-
 2. ブラウザで http://localhost:18080 にアクセスし、VS Code Server に接続します。
 
-3. VS Code のターミナルで以下のコマンドを実行してリポジトリをクローンします：
-   ```bash
-   cd /home/coder
-   git clone https://github.com/littlemex/aws-samples.git
-   cd aws-samples/workshops/ai-coding-workshop/cline
-   ```
-
-4. VS Code にアクセスできたら以下のコマンドを実行して今後の作業に必要なツールがインストールされているか確認してください。
+3. VS Code にアクセスできたら以下のコマンドを実行して今後の作業に必要なツールがインストールされているか確認してください。
    ```bash
    mise install
    source ~/.bashrc
