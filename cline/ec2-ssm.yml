@@ -42,10 +42,6 @@ Parameters:
     MaxValue: 16384
 
   # ネットワーク設定関連
-  AvailabilityZone1:
-    Type: AWS::EC2::AvailabilityZone::Name
-    Default: us-east-1a
-    Description: Availability Zone for the first public subnet
   PublicSubnet1Cidr:
     Type: String
     Default: 10.0.0.0/24
@@ -76,7 +72,7 @@ Resources:
     Type: AWS::EC2::Subnet
     Properties:
       VpcId: !Ref VPC
-      AvailabilityZone: !Ref AvailabilityZone1
+      AvailabilityZone: !Select [0, !GetAZs !Ref 'AWS::Region']
       CidrBlock: !Ref PublicSubnet1Cidr
       MapPublicIpOnLaunch: true
       Tags:
@@ -89,7 +85,7 @@ Resources:
     Type: AWS::EC2::Subnet
     Properties:
       VpcId: !Ref VPC
-      AvailabilityZone: !Ref AvailabilityZone1
+      AvailabilityZone: !Select [0, !GetAZs !Ref 'AWS::Region']
       CidrBlock: !Ref PrivateSubnet1Cidr
       MapPublicIpOnLaunch: false
       Tags:
