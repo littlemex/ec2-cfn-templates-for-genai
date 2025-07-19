@@ -26,20 +26,14 @@ curl -O https://raw.githubusercontent.com/littlemex/ec2-cfn-templates-for-genai/
 > - AWS 認証情報が適切に設定されていること
 
 
-## テンプレートの選択
+## テンプレート
 
-1. `ec2-ssm.yml` - 新しい Amazon VPC を作成する場合 - **推奨**
+- `ec2-ssm.yml` - 新しい Amazon VPC を作成する場合
    - 完全に独立した Amazon VPC 環境を構築
    - Amazon NAT Gateway 経由でインターネットアクセス
    - プライベートサブネットに Amazon EC2 を配置
    - Internet Gateway、NAT Gateway、パブリック/プライベートサブネットの完全な構成
    - より高いセキュリティが必要な環境に推奨
-
-2. `ec2-ssm-default-vpc.yml` - デフォルト VPC を使用する場合
-   - 既存のデフォルト VPC を使用
-   - パブリックサブネットを自動検出（手動指定不要）
-   - パラメータ入力を最小限に抑制
-   - 開発環境や検証環境向けのシンプルな構成
 
 ## ネットワーク構成の詳細
 
@@ -60,22 +54,6 @@ graph TB
 - Internet Gateway を介してパブリックサブネットがインターネットに接続
 - NAT Gateway を介してプライベートサブネットからインターネットにアクセス可能
 - Amazon EC2 インスタンスはプライベートサブネットに配置され、直接のインターネットアクセスを制限
-
-### ec2-ssm-default-vpc.yml の構成
-
-```mermaid
-graph TB
-    Internet[インターネット]
-    IGW[Internet Gateway]
-    PublicSubnet[パブリックサブネット<br>Amazon EC2 インスタンス]
-
-    Internet --> IGW
-    IGW --> PublicSubnet
-```
-
-- デフォルト VPC の既存の Internet Gateway を使用
-- パブリックサブネットを自動検出して Amazon EC2 インスタンスを配置
-- シンプルな構成で素早いデプロイが可能
 
 ## デプロイ方法
 
