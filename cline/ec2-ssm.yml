@@ -72,7 +72,7 @@ Resources:
     Type: AWS::EC2::Subnet
     Properties:
       VpcId: !Ref VPC
-      AvailabilityZone: !Select [0, !GetAZs !Ref 'AWS::Region']
+      AvailabilityZone: !Select [0, !GetAZs 'AWS::Region']
       CidrBlock: !Ref PublicSubnet1Cidr
       MapPublicIpOnLaunch: true
       Tags:
@@ -85,7 +85,7 @@ Resources:
     Type: AWS::EC2::Subnet
     Properties:
       VpcId: !Ref VPC
-      AvailabilityZone: !Select [0, !GetAZs !Ref 'AWS::Region']
+      AvailabilityZone: !Select [0, !GetAZs 'AWS::Region']
       CidrBlock: !Ref PrivateSubnet1Cidr
       MapPublicIpOnLaunch: false
       Tags:
