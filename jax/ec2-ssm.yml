@@ -1,0 +1,721 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'DLAMI EC2 instance with Trn1/Inf2 support for AWS Neuron JAX development'
+
+Parameters:
+  # 識別子関連
+  UserName:
+    Type: String
+    Description: User name to prevent resource naming conflicts (max 20 characters)
+    AllowedPattern: "[a-zA-Z0-9-]{1,20}"
+    ConstraintDescription: Must contain only alphanumeric characters and hyphens (max 20 characters)
+  
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, stg, prod]
+    Description: Environment name (dev/stg/prod)
+
+  # インスタンス設定関連
+  InstanceType:
+    Type: String
+    Default: trn1.2xlarge
+    AllowedValues:
+      # Trn1 instances (smallest to largest)
+      - trn1.2xlarge    # 8 vCPUs, 32 GiB RAM, 1 Trainium chip
+      - trn1.32xlarge   # 128 vCPUs, 512 GiB RAM, 16 Trainium chips
+      # Inf2 instances (smallest to largest)  
+      - inf2.xlarge     # 4 vCPUs, 16 GiB RAM, 1 Inferentia2 chip
+      - inf2.8xlarge    # 32 vCPUs, 128 GiB RAM, 1 Inferentia2 chip
+      - inf2.24xlarge   # 96 vCPUs, 384 GiB RAM, 6 Inferentia2 chips
+      - inf2.48xlarge   # 192 vCPUs, 768 GiB RAM, 12 Inferentia2 chips
+    Description: EC2 instance type (Trn1 for training, Inf2 for inference)
+
+  Region:
+    Type: String
+    Default: us-east-1
+    Description: AWS Region
+
+  # DLAMI選択
+  DLAMIType:
+    Type: String
+    Default: multi-framework
+    AllowedValues:
+      - multi-framework
+      - pytorch-2.7
+      - jax-0.6
+      - tensorflow-2.10
+    Description: Type of DLAMI to use
+
+  # ネットワーク設定関連
+  VpcCidr:
+    Type: String
+    Default: 10.0.0.0/16
+    Description: CIDR block for VPC
+
+  PublicSubnet1Cidr:
+    Type: String
+    Default: 10.0.0.0/24
+    Description: CIDR block for the first public subnet
+    AllowedPattern: ^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/([0-9]|[1-2][0-9]|3[0-2]))$
+
+  PrivateSubnet1Cidr:
+    Type: String
+    Default: 10.0.1.0/24
+    Description: CIDR block for the first private subnet
+    AllowedPattern: ^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/([0-9]|[1-2][0-9]|3[0-2]))$
+
+  EbsVolumeSize:
+    Type: Number
+    Default: 512
+    Description: Size of EBS volume in GB (minimum 512GB recommended for Neuron development)
+    MinValue: 100
+    MaxValue: 16384
+
+Conditions:
+  IsMultiFramework: !Equals [!Ref DLAMIType, 'multi-framework']
+  IsPyTorch: !Equals [!Ref DLAMIType, 'pytorch-2.7']
+  IsJAX: !Equals [!Ref DLAMIType, 'jax-0.6']
+  IsTensorFlow: !Equals [!Ref DLAMIType, 'tensorflow-2.10']
+
+Resources:
+  # VPC設定
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VpcCidr
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      InstanceTenancy: default
+      Tags:
+        - Key: Name
+          Value: !Join ['-', [!Ref UserName, !Ref Environment, 'vpc']]
+
+  PublicSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref PublicSubnet1Cidr
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Join ['-', [!Ref UserName, 'PublicSubnet']]
+
+  PrivateSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref PrivateSubnet1Cidr
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Join ['-', [!Ref UserName, 'PrivateSubnet']]
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Join ['-', [!Ref UserName, 'IGW']]
+
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  NATGatewayEIP:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+
+  NATGateway:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NATGatewayEIP.AllocationId
+      SubnetId: !Ref PublicSubnet
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Join ['-', [!Ref UserName, 'PublicRouteTable']]
+
+  PublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: AttachGateway
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet
+      RouteTableId: !Ref PublicRouteTable
+
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Join ['-', [!Ref UserName, 'PrivateRouteTable']]
+
+  PrivateRoute:
+    Type: AWS::EC2::Route
+    DependsOn: NATGateway
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NATGateway
+
+  PrivateSubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet
+      RouteTableId: !Ref PrivateRouteTable
+
+  # セキュリティグループ
+  EC2SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for DLAMI Neuron instance
+      VpcId: !Ref VPC
+      SecurityGroupIngress: []  # Session Manager経由でアクセス
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          FromPort: -1
+          ToPort: -1
+          CidrIp: 0.0.0.0/0
+          Description: Allow all outbound traffic
+      Tags:
+        - Key: Name
+          Value: !Join ['-', [!Ref UserName, !Ref Environment, 'neuron-sg']]
+
+  # IAMロール
+  EC2Role:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Join ['-', [!Ref UserName, !Ref Environment, 'neuron-role']]
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub arn:${AWS::Partition}:iam::aws:policy/AmazonSSMManagedInstanceCore
+      Policies:
+        - PolicyName: !Join ['-', [!Ref UserName, !Ref Environment, 'neuron-policy']]
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ssmmessages:CreateControlChannel
+                  - ssmmessages:CreateDataChannel
+                  - ssmmessages:OpenControlChannel
+                  - ssmmessages:OpenDataChannel
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - bedrock:InvokeModel
+                  - bedrock:InvokeModelWithResponseStream
+                Resource:
+                  - !Sub arn:aws:bedrock:*::foundation-model/anthropic.claude-3-*
+                  - !Sub arn:aws:bedrock:*::foundation-model/anthropic.claude-3-5-sonnet-*
+                  - !Sub arn:aws:bedrock:*::foundation-model/anthropic.claude-3-7-sonnet-*
+                  - !Sub arn:aws:bedrock:*::foundation-model/amazon.nova-*
+                  - !Sub arn:aws:bedrock:*::foundation-model/deepseek.r1-*
+                  - !Sub arn:aws:bedrock:*:*:inference-profile/*
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:DeleteObject
+                  - s3:ListBucket
+                Resource:
+                  - !Sub arn:aws:s3:::${UserName}-${Environment}-neuron-*
+                  - !Sub arn:aws:s3:::${UserName}-${Environment}-neuron-*/*
+
+  EC2InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      InstanceProfileName: !Join ['-', [!Ref UserName, !Ref Environment, 'neuron-instance-profile']]
+      Roles:
+        - !Ref EC2Role
+
+  # EC2インスタンス
+  EC2Instance:
+    Type: AWS::EC2::Instance
+    DependsOn:
+      - NATGateway
+      - PrivateRoute
+    Properties:
+      InstanceType: !Ref InstanceType
+      ImageId: !Sub 
+        - '{{resolve:ssm:/aws/service/neuron/dlami/${DLAMIPath}/ubuntu-22.04/latest/image_id}}'
+        - DLAMIPath: !If 
+            - IsMultiFramework
+            - 'multi-framework'
+            - !If 
+              - IsPyTorch
+              - 'pytorch-2.7'
+              - !If 
+                - IsJAX
+                - 'jax-0.6'
+                - 'tensorflow-2.10'
+      SubnetId: !Ref PrivateSubnet
+      IamInstanceProfile: !Ref EC2InstanceProfile
+      SecurityGroupIds:
+        - !Ref EC2SecurityGroup
+      BlockDeviceMappings:
+        - DeviceName: /dev/sda1
+          Ebs:
+            VolumeSize: !Ref EbsVolumeSize
+            VolumeType: gp3
+            DeleteOnTermination: true
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          
+          # ログ関数
+          log_error() {
+            echo "ERROR: $(date): $1" | tee -a /var/log/user-data-error.log
+          }
+          
+          log_success() {
+            echo "SUCCESS: $(date): $1" | tee -a /var/log/user-data-success.log
+          }
+          
+          log_success "DLAMI Neuron インスタンス初期化開始: $(date)"
+          
+          # システム更新
+          apt-get update -y
+          
+          # 基本ツールのインストール
+          apt-get install -y curl wget unzip htop jq ca-certificates git vim nano
+          
+          # AWS CLI v2のインストール
+          curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+          unzip awscliv2.zip
+          ./aws/install --bin-dir /usr/local/bin --install-dir /usr/local/aws-cli --update
+          
+          # Neuron環境の確認
+          log_success "Neuronドライバーとツールの状態確認"
+          
+          # Neuronドライバーの状態確認
+          if lsmod | grep -q neuron; then
+            log_success "Neuronドライバーが正常にロードされています"
+          else
+            log_error "Neuronドライバーがロードされていません"
+          fi
+          
+          # NeuronCoreの状態確認
+          if command -v neuron-ls &> /dev/null; then
+            neuron-ls | tee -a /var/log/user-data-success.log
+          else
+            log_error "neuron-lsコマンドが見つかりません"
+          fi
+          
+          # 仮想環境の確認とセットアップ
+          log_success "Neuron仮想環境の確認"
+          
+          # 利用可能な仮想環境をリスト
+          ls -la /opt/aws_neuron* /opt/aws_neuronx* 2>/dev/null | tee -a /var/log/user-data-success.log || log_error "Neuron仮想環境が見つかりません"
+          
+          # JAX環境のセットアップ（JAX DLAMIの場合）
+          if [[ "${DLAMIType}" == "jax-0.6" ]]; then
+            log_success "JAX Neuron環境のセットアップ"
+            
+            # JAX環境をアクティベート
+            source /opt/aws_neuronx_venv_jax_0_6/bin/activate
+            
+            # JAXの動作確認
+            python3 -c "import jax; import jax.numpy as jnp; print('JAX devices:', jax.devices()); print('JAX default backend:', jax.default_backend()); result = jnp.multiply(1, 1); print('JAX test result:', result)" | tee -a /var/log/user-data-success.log
+            
+            deactivate
+          fi
+          
+          # PyTorch環境のセットアップ（PyTorch DLAMIの場合）
+          if [[ "${DLAMIType}" == "pytorch-2.7" ]]; then
+            log_success "PyTorch Neuron環境のセットアップ"
+            
+            # PyTorch環境をアクティベート
+            source /opt/aws_neuronx_venv_pytorch_2_7/bin/activate
+            
+            # PyTorchの動作確認
+            python3 -c "import torch; import torch_neuronx; print('PyTorch version:', torch.__version__); print('Torch NeuronX available:', hasattr(torch_neuronx, 'trace'))" | tee -a /var/log/user-data-success.log
+            
+            deactivate
+          fi
+          
+          # 開発環境のセットアップ
+          log_success "開発環境のセットアップ"
+          
+          # Jupyter Notebookのインストール（全体環境）
+          pip3 install jupyter jupyterlab notebook
+          
+          # VS Code Serverのインストール
+          log_success "VS Code Serverのインストール"
+          
+          # VS Code Server用ユーザーの作成
+          adduser --disabled-password --gecos "" coder
+          echo "coder ALL=(ALL:ALL) NOPASSWD: ALL" | tee /etc/sudoers.d/coder
+          usermod -aG sudo coder
+          
+          # VS Code Serverのインストール（最新版）
+          curl -fsSL https://code-server.dev/install.sh | sh
+          
+          # VS Code Server設定ディレクトリの作成
+          mkdir -p /home/coder/.config/code-server
+          
+          # VS Code Server設定ファイルの作成
+          cat > /home/coder/.config/code-server/config.yaml << 'VSCODE_EOF'
+          bind-addr: 0.0.0.0:8080
+          auth: none
+          password: 
+          cert: false
+          VSCODE_EOF
+          
+          chown -R coder:coder /home/coder/.config
+          
+          # VS Code Serverサービスの作成
+          cat > /etc/systemd/system/code-server.service << 'SERVICE_EOF'
+          [Unit]
+          Description=code-server
+          After=network.target
+          
+          [Service]
+          Type=simple
+          User=coder
+          Group=coder
+          Environment="HOME=/home/coder"
+          Environment="PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+          WorkingDirectory=/home/coder
+          ExecStart=/usr/bin/code-server --config /home/coder/.config/code-server/config.yaml
+          Restart=always
+          RestartSec=10
+          
+          [Install]
+          WantedBy=multi-user.target
+          SERVICE_EOF
+          
+          # VS Code Serverサービスの開始
+          systemctl daemon-reload
+          systemctl enable code-server
+          systemctl start code-server
+          
+          # サービス状態の確認
+          sleep 5
+          if systemctl is-active --quiet code-server; then
+            log_success "VS Code Serverが正常に起動しました"
+          else
+            log_error "VS Code Serverの起動に失敗しました"
+            systemctl status code-server | tee -a /var/log/user-data-error.log
+          fi
+          
+          # Jupyter設定ディレクトリの作成
+          mkdir -p /home/ubuntu/.jupyter
+          
+          # Jupyter設定ファイルの作成
+          cat > /home/ubuntu/.jupyter/jupyter_notebook_config.py << 'JUPYTER_EOF'
+          c.NotebookApp.ip = '0.0.0.0'
+          c.NotebookApp.port = 8888
+          c.NotebookApp.open_browser = False
+          c.NotebookApp.allow_root = True
+          c.NotebookApp.token = ''
+          c.NotebookApp.password = ''
+          JUPYTER_EOF
+          
+          chown -R ubuntu:ubuntu /home/ubuntu/.jupyter
+          
+          # サンプルスクリプトの作成
+          mkdir -p /home/ubuntu/neuron-samples
+          
+          # シンプルなPythonスクリプトを作成
+          cat > /home/ubuntu/neuron-samples/neuron-test.py << 'PYTHON_EOF'
+          #!/usr/bin/env python3
+          # AWS Neuron テスト環境
+          # このスクリプトはAWS Neuron環境の動作確認用です
+          
+          import subprocess
+          import sys
+          
+          print("Python version:", sys.version)
+          print("\nNeuron devices:")
+          try:
+              result = subprocess.run(['neuron-ls'], capture_output=True, text=True)
+              print(result.stdout)
+          except Exception as e:
+              print(f"Error running neuron-ls: {e}")
+          
+          # JAX環境のテスト
+          try:
+              import jax
+              import jax.numpy as jnp
+              print("\nJAX Test:")
+              print("JAX devices:", jax.devices())
+              print("JAX default backend:", jax.default_backend())
+              result = jnp.multiply(1, 1)
+              print("JAX test result:", result)
+          except ImportError:
+              print("\nJAX not available in current environment")
+          except Exception as e:
+              print(f"\nJAX error: {e}")
+          PYTHON_EOF
+          
+          chmod +x /home/ubuntu/neuron-samples/neuron-test.py
+          
+          # VS Code用のサンプルファイルをcoderユーザーにもコピー
+          cp -r /home/ubuntu/neuron-samples /home/coder/
+          chown -R coder:coder /home/coder/neuron-samples
+          
+          # VS Code用のNeuron環境設定スクリプト
+          cat > /home/coder/setup-neuron-env.sh << 'SETUP_EOF'
+          #!/bin/bash
+          # Neuron環境のセットアップスクリプト
+          
+          echo "Setting up Neuron environment for VS Code..."
+          
+          # 環境変数の設定
+          export NEURON_RT_LOG_LEVEL=INFO
+          export NEURON_CC_FLAGS="--model-type=transformer"
+          export JAX_PLATFORMS=neuron
+          export JAX_NEURON_EXPERIMENTAL_PYTHON_CACHE=1
+          
+          # Pythonパスの設定（JAX環境）
+          if [ -d "/opt/aws_neuronx_venv_jax_0_6" ]; then
+              source /opt/aws_neuronx_venv_jax_0_6/bin/activate
+              echo "JAX Neuron environment activated"
+          elif [ -d "/opt/aws_neuronx_venv_pytorch_2_7" ]; then
+              source /opt/aws_neuronx_venv_pytorch_2_7/bin/activate
+              echo "PyTorch Neuron environment activated"
+          else
+              echo "No Neuron virtual environment found"
+          fi
+          
+          # VS Codeで使用するPythonインタープリターの表示
+          echo "Python interpreter: $(which python)"
+          echo "Python version: $(python --version)"
+          
+          # Neuronデバイスの確認
+          echo "Neuron devices:"
+          neuron-ls
+          SETUP_EOF
+          
+          chmod +x /home/coder/setup-neuron-env.sh
+          
+          # coderユーザー用の.bashrc設定
+          cat >> /home/coder/.bashrc << 'CODER_BASHRC_EOF'
+          
+          # AWS Neuron環境設定
+          export NEURON_RT_LOG_LEVEL=INFO
+          export NEURON_CC_FLAGS="--model-type=transformer"
+          export JAX_PLATFORMS=neuron
+          export JAX_NEURON_EXPERIMENTAL_PYTHON_CACHE=1
+          
+          # エイリアス
+          alias neuron-status='/home/ubuntu/monitor-neuron.sh'
+          alias activate-jax='source /opt/aws_neuronx_venv_jax_0_6/bin/activate'
+          alias activate-pytorch='source /opt/aws_neuronx_venv_pytorch_2_7/bin/activate'
+          alias activate-tensorflow='source /opt/aws_neuronx_venv_tensorflow_2_10/bin/activate'
+          
+          echo "VS Code ServerでAWS Neuron DLAMI環境を使用中"
+          echo "環境セットアップ: source ~/setup-neuron-env.sh"
+          CODER_BASHRC_EOF
+          
+          chown -R ubuntu:ubuntu /home/ubuntu/neuron-samples
+          chown -R coder:coder /home/coder
+          
+          # Neuron監視スクリプトの作成
+          cat > /home/ubuntu/monitor-neuron.sh << 'MONITOR_EOF'
+          #!/bin/bash
+          echo "=== Neuron System Status ==="
+          echo "Date: $(date)"
+          echo ""
+          echo "=== Neuron Devices ==="
+          neuron-ls
+          echo ""
+          echo "=== Neuron Top (5 seconds) ==="
+          timeout 5 neuron-top
+          echo ""
+          echo "=== System Resources ==="
+          free -h
+          echo ""
+          df -h
+          MONITOR_EOF
+          
+          chmod +x /home/ubuntu/monitor-neuron.sh
+          chown ubuntu:ubuntu /home/ubuntu/monitor-neuron.sh
+          
+          # 環境変数の設定
+          cat >> /home/ubuntu/.bashrc << 'BASHRC_EOF'
+          
+          # AWS Neuron環境設定
+          export NEURON_RT_LOG_LEVEL=INFO
+          export NEURON_CC_FLAGS="--model-type=transformer"
+          
+          # JAX設定（JAX使用時）
+          export JAX_PLATFORMS=neuron
+          export JAX_NEURON_EXPERIMENTAL_PYTHON_CACHE=1
+          
+          # エイリアス
+          alias neuron-status='/home/ubuntu/monitor-neuron.sh'
+          alias activate-jax='source /opt/aws_neuronx_venv_jax_0_6/bin/activate'
+          alias activate-pytorch='source /opt/aws_neuronx_venv_pytorch_2_7/bin/activate'
+          alias activate-tensorflow='source /opt/aws_neuronx_venv_tensorflow_2_10/bin/activate'
+          alias vscode-status='systemctl status code-server'
+          alias vscode-restart='sudo systemctl restart code-server'
+          alias vscode-logs='sudo journalctl -u code-server -f'
+          
+          echo "AWS Neuron DLAMI環境が利用可能です"
+          echo "使用可能なコマンド:"
+          echo "  neuron-status    - Neuronシステム状態の確認"
+          echo "  activate-jax     - JAX Neuron環境のアクティベート"
+          echo "  activate-pytorch - PyTorch Neuron環境のアクティベート"
+          echo "  neuron-ls        - NeuronCoreの状態確認"
+          echo "  neuron-top       - Neuronリソース監視"
+          echo "  vscode-status    - VS Code Server状態確認"
+          echo "  vscode-restart   - VS Code Server再起動"
+          echo ""
+          echo "アクセスURL:"
+          echo "  Jupyter Notebook: http://localhost:18888 (port forward required)"
+          echo "  VS Code Server:   http://localhost:18080 (port forward required)"
+          BASHRC_EOF
+          
+          # 最終確認
+          log_success "=== 最終システム状態 ==="
+          
+          # Neuronドライバーの最終確認
+          lsmod | grep neuron | tee -a /var/log/user-data-success.log
+          
+          # NeuronCoreの最終確認
+          neuron-ls | tee -a /var/log/user-data-success.log
+          
+          # ディスク使用量の確認
+          df -h | tee -a /var/log/user-data-success.log
+          
+          log_success "DLAMI Neuron インスタンス初期化完了: $(date)"
+          
+          # 成功通知
+          echo "AWS Neuron DLAMI setup completed successfully!" > /tmp/setup-complete.txt
+          
+      Tags:
+        - Key: Name
+          Value: !Join ['-', [!Ref UserName, !Ref Environment, 'neuron-instance']]
+        - Key: DLAMIType
+          Value: !Ref DLAMIType
+        - Key: InstanceType
+          Value: !Ref InstanceType
+
+Outputs:
+  InstanceId:
+    Description: EC2 Instance ID
+    Value: !Ref EC2Instance
+    Export:
+      Name: !Sub ${AWS::StackName}-InstanceId
+
+  InstanceType:
+    Description: EC2 Instance Type
+    Value: !Ref InstanceType
+    Export:
+      Name: !Sub ${AWS::StackName}-InstanceType
+
+  DLAMIType:
+    Description: DLAMI Type Used
+    Value: !Ref DLAMIType
+    Export:
+      Name: !Sub ${AWS::StackName}-DLAMIType
+
+  Prerequisites:
+    Description: Required prerequisites
+    Value: |
+      1. Install AWS CLI v2
+      2. Install Session Manager plugin (https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-install-plugin.html)
+
+  SSMConnectCommand:
+    Description: Command to connect via Session Manager
+    Value: !Join
+      - ''
+      - - 'aws ssm start-session'
+        - ' --target '
+        - !Ref EC2Instance
+        - ' --region '
+        - !Ref Region
+
+  JupyterPortForwardCommand:
+    Description: Command to forward Jupyter port 8888 to local port 18888
+    Value: !Join
+      - ''
+      - - 'aws ssm start-session'
+        - ' --target '
+        - !Ref EC2Instance
+        - ' --region '
+        - !Ref Region
+        - ' --document-name AWS-StartPortForwardingSession'
+        - ' --parameters ''{"portNumber":["8888"],"localPortNumber":["18888"]}'''
+
+  JupyterAccessURL:
+    Description: URL to access Jupyter after port forwarding
+    Value: "After running the port forward command, access: http://localhost:18888"
+
+  VSCodePortForwardCommand:
+    Description: Command to forward VS Code Server port 8080 to local port 18080
+    Value: !Join
+      - ''
+      - - 'aws ssm start-session'
+        - ' --target '
+        - !Ref EC2Instance
+        - ' --region '
+        - !Ref Region
+        - ' --document-name AWS-StartPortForwardingSession'
+        - ' --parameters ''"portNumber":["8080"],"localPortNumber":["18080"]}'''
+
+  VSCodeAccessURL:
+    Description: URL to access VS Code Server after port forwarding
+    Value: "After running the port forward command, access: http://localhost:18080"
+
+  NeuronMonitoringCommands:
+    Description: Useful Neuron monitoring and development commands
+    Value: |
+      Connect to instance and run:
+      - neuron-ls          # List NeuronCores
+      - neuron-top         # Monitor Neuron resources
+      - neuron-status      # Custom monitoring script
+      - activate-jax       # Activate JAX environment
+      - activate-pytorch   # Activate PyTorch environment
+      - vscode-status      # Check VS Code Server status
+      - vscode-restart     # Restart VS Code Server
+      - vscode-logs        # View VS Code Server logs
+
+  Configuration:
+    Description: Stack configuration details
+    Value: !Join
+      - ''
+      - - 'Stack Name: '
+        - !Join ['-', [!Ref UserName, !Ref Environment]]
+        - '\nRegion: '
+        - !Ref Region
+        - '\nInstance Type: '
+        - !Ref InstanceType
+        - '\nDLAMI Type: '
+        - !Ref DLAMIType
+        - '\nVPC CIDR: '
+        - !Ref VpcCidr
+        - '\nEBS Volume Size: '
+        - !Ref EbsVolumeSize
+        - ' GB'
+
+  EstimatedCost:
+    Description: Estimated hourly cost (USD, approximate)
+    Value: !Sub |
+      Instance Type: ${InstanceType}
+      Estimated cost varies by region and usage.
+      Trn1.2xlarge: ~$1.34/hour
+      Inf2.xlarge: ~$0.76/hour
+      Please check AWS pricing for exact costs.
