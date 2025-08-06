@@ -60,6 +60,7 @@ AWS Neuron DLAMI Stack Manager
   -t, --type TYPE         インスタンスタイプ (デフォルト: $DEFAULT_INSTANCE_TYPE)
   -d, --dlami TYPE        DLAMIタイプ (デフォルト: $DEFAULT_DLAMI_TYPE)
   -u, --user USER         ユーザー名 (デフォルト: 現在のユーザー)
+  -p, --port PORT         ローカルポート番号 (vscodeコマンド用, デフォルト: 18080)
   -h, --help              このヘルプを表示
 
 インスタンスタイプ:
@@ -72,7 +73,9 @@ DLAMIタイプ:
 例:
   $0 create -n my-jax-dev -t trn1.2xlarge -d jax-0.6
   $0 status -n my-jax-dev
-  $0 ports -n my-jax-dev
+  $0 vscode -n my-jax-dev                    # デフォルトポート 18080
+  $0 vscode -n my-jax-dev -p 28080           # カスタムポート 28080
+  $0 ports -n my-jax-dev -p 28080            # 複数ポートでVS Codeは28080
   $0 delete -n my-jax-dev
 
 EOF
@@ -86,6 +89,7 @@ parse_args() {
     INSTANCE_TYPE="$DEFAULT_INSTANCE_TYPE"
     DLAMI_TYPE="$DEFAULT_DLAMI_TYPE"
     USER_NAME=$(whoami)
+    LOCAL_PORT="18080"  # デフォルトポート
     
     while [[ $# -gt 0 ]]; do
         case $1 in
@@ -111,6 +115,10 @@ parse_args() {
                 ;;
             -u|--user)
                 USER_NAME="$2"
+                shift 2
+                ;;
+            -p|--port)
+                LOCAL_PORT="$2"
                 shift 2
                 ;;
             -h|--help)
@@ -346,13 +354,14 @@ forward_vscode() {
     fi
     
     log_info "VS Codeポートフォワーディング開始: $instance_id"
-    log_success "アクセスURL: http://localhost:18080"
+    log_info "ローカルポート: $LOCAL_PORT"
+    log_success "アクセスURL: http://localhost:$LOCAL_PORT"
     
     aws ssm start-session \
         --target "$instance_id" \
         --region "$REGION" \
         --document-name AWS-StartPortForwardingSession \
-        --parameters '{"portNumber":["8080"],"localPortNumber":["18080"]}'
+        --parameters "{\"portNumber\":[\"8080\"],\"localPortNumber\":[\"$LOCAL_PORT\"]}"
 }
 
 # 複数ポートフォワーディング
@@ -364,10 +373,13 @@ forward_ports() {
         return 1
     fi
     
+    # ポートの設定 (デフォルトまたは指定されたポート)
+    local vscode_port="$LOCAL_PORT"
+    
     log_info "複数ポートフォワーディング開始: $instance_id"
     log_success "アクセスURL:"
     log_success "  Jupyter: http://localhost:18888"
-    log_success "  VS Code: http://localhost:18080"
+    log_success "  VS Code: http://localhost:$vscode_port"
     log_info "Ctrl+Cで終了"
     
     # バックグラウンドでポートフォワーディング開始
@@ -383,7 +395,7 @@ forward_ports() {
         --target "$instance_id" \
         --region "$REGION" \
         --document-name AWS-StartPortForwardingSession \
-        --parameters '{"portNumber":["8080"],"localPortNumber":["18080"]}' &
+        --parameters "{\"portNumber\":[\"8080\"],\"localPortNumber\":[\"$vscode_port\"]}" &
     
     local vscode_pid=$!
     
@@ -439,9 +451,27 @@ validate_template() {
     fi
 }
 
+# ポート番号の検証
+validate_port() {
+    local port="$1"
+    if [[ ! "$port" =~ ^[0-9]+$ ]] || [[ "$port" -lt 1024 ]] || [[ "$port" -gt 65535 ]]; then
+        log_error "無効なポート番号: $port (有効範囲: 1024-65535)"
+        return 1
+    fi
+    return 0
+}
+
 # メイン処理
 main() {
     parse_args "$@"
+    
+    # ポート番号の検証 (vscodeコマンドの場合)
+    if [[ "$COMMAND" == "vscode" ]] || [[ "$COMMAND" == "ports" ]]; then
+        if ! validate_port "$LOCAL_PORT"; then
+            exit 1
+        fi
+    fi
+    
     check_aws_cli
     
     case "$COMMAND" in
