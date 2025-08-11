@@ -362,7 +362,7 @@ Resources:
                   WorkingDirectory=${HomeFolder}
                   Restart=always
                   RestartSec=10
-                  ExecStart=/snap/bin/code serve-web --without-connection-token --accept-server-license-terms --host 0.0.0.0 --port 8080
+                  ExecStart=/snap/bin/code serve-web --connection-token {{ VSCodeServerPassword }} --accept-server-license-terms --host 0.0.0.0 --port 8080
                   [Install]
                   WantedBy=multi-user.target
                   EOF
@@ -734,5 +734,5 @@ Outputs:
     Description: VSCode-server URL
     Value: !Sub https://${CloudFrontDistribution.DomainName}/?folder=${HomeFolder}
   Password:
-    Description: VSCode-server Password
+    Description: VSCode-server Connection Token
     Value: !GetAtt SecretPlaintext.password

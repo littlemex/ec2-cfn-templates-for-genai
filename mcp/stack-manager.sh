@@ -329,8 +329,13 @@ show_quick_info() {
     fi
 
     if [[ -n "$password" && "$password" != "None" ]]; then
-        log_info "🔑 ログインパスワード:"
+        log_info "🔑 接続トークン:"
         echo "   $password"
+        echo ""
+        log_info "💡 アクセス方法:"
+        echo "   1. ブラウザでURLにアクセス"
+        echo "   2. トークン入力画面で上記トークンを入力"
+        echo "   3. または直接: ${vscode_url%\?*}?tkn=$password"
         echo ""
     fi
 
