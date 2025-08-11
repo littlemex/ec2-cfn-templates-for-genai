@@ -1,6 +1,7 @@
 #!/bin/bash
-# VS Code Workshop Stack Manager
-# CloudFormation + Cognito + VS Code Server の全操作を一つのスクリプトで実行
+
+# VS Code Server Stack Manager
+# CloudFormation + EC2 + VS Code Server の操作スクリプト
 
 set -e
 
@@ -34,10 +35,6 @@ log_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
-log_cognito() {
-    echo -e "${PURPLE}[COGNITO]${NC} $1"
-}
-
 log_vscode() {
     echo -e "${CYAN}[VSCODE]${NC} $1"
 }
@@ -45,32 +42,28 @@ log_vscode() {
 # ヘルプ表示
 show_help() {
     cat << EOF
-🚀 VS Code Workshop Stack Manager
+🚀 VS Code Server Stack Manager
 
 使用方法:
     $0 <command> [options]
 
 コマンド:
-    create      - ワークショップスタックを作成
+    create      - VS Code Serverスタックを作成
     status      - スタック状態を確認
     monitor     - スタック作成/削除の進捗を監視
     outputs     - スタック出力値を表示
-    login       - ログイン情報を表示
-    open        - VS Code Serverをブラウザでオープン
-    cognito     - Cognito詳細情報を表示
-    fix-oauth   - OAuth設定を修正
-    direct-login - 直接CognitoログインURLを表示
+    connect     - EC2インスタンスにSSM接続
+    open        - VS Code ServerをブラウザでオープンWeb
     logs        - CloudFormationイベントログを表示
     delete      - スタックを削除
     list        - 全スタック一覧
     validate    - テンプレート検証
 
 オプション:
-    -n, --name NAME         スタック名 (デフォルト: vscode-workshop-USERNAME)
+    -n, --name NAME         スタック名 (デフォルト: vscode-server-USERNAME)
     -r, --region REGION     AWSリージョン (デフォルト: $DEFAULT_REGION)
     -t, --type TYPE         インスタンスタイプ (デフォルト: $DEFAULT_INSTANCE_TYPE)
-    -e, --email EMAIL       管理者メールアドレス (必須)
-    -p, --password PASS     管理者パスワード (必須)
+    -u, --user USER         VS Code Serverユーザー名 (デフォルト: coder)
     -h, --help              このヘルプを表示
 
 インスタンスタイプ:
@@ -80,28 +73,28 @@ show_help() {
 
 使用例:
     # 基本的な作成
-    $0 create -e admin@example.com -p MyPassword123
+    $0 create
 
     # カスタム設定で作成
-    $0 create -n my-workshop -e admin@example.com -p MyPassword123 -t c7i.2xlarge
+    $0 create -n my-vscode -t c7i.2xlarge -u developer
 
     # 進捗監視
-    $0 monitor -n my-workshop
+    $0 monitor -n my-vscode
 
-    # ログイン情報確認
-    $0 login -n my-workshop
+    # EC2に接続
+    $0 connect -n my-vscode
 
     # ブラウザでオープン
-    $0 open -n my-workshop
+    $0 open -n my-vscode
 
     # スタック削除
-    $0 delete -n my-workshop
+    $0 delete -n my-vscode
 
-認証について:
-    🔐 Cognito User Poolが自動作成されます
-    👤 指定したメール/パスワードで管理者ユーザーが作成されます
-    🌐 CloudFront経由でアクセス可能になります
-
+機能:
+    🖥️  EC2インスタンス上でVS Code Serverが動作
+    🌐 CloudFront経由でアクセス可能
+    🔐 SSM Session Managerで安全に接続
+    🐳 Docker、Git、AWS CLI、uvが事前インストール済み
 EOF
 }
 
@@ -111,13 +104,12 @@ parse_args() {
     STACK_NAME=""
     REGION="$DEFAULT_REGION"
     INSTANCE_TYPE="$DEFAULT_INSTANCE_TYPE"
-    ADMIN_EMAIL=""
-    ADMIN_PASSWORD=""
+    VSCODE_USER="coder"
     USER_NAME=$(whoami)
 
     while [[ $# -gt 0 ]]; do
         case $1 in
-            create|status|monitor|outputs|login|open|cognito|fix-oauth|direct-login|logs|delete|list|validate)
+            create|status|monitor|outputs|connect|open|logs|delete|list|validate)
                 COMMAND="$1"
                 shift
                 ;;
@@ -133,12 +125,8 @@ parse_args() {
                 INSTANCE_TYPE="$2"
                 shift 2
                 ;;
-            -e|--email)
-                ADMIN_EMAIL="$2"
-                shift 2
-                ;;
-            -p|--password)
-                ADMIN_PASSWORD="$2"
+            -u|--user)
+                VSCODE_USER="$2"
                 shift 2
                 ;;
             -h|--help)
@@ -155,7 +143,7 @@ parse_args() {
 
     # デフォルトスタック名
     if [[ -z "$STACK_NAME" ]]; then
-        STACK_NAME="vscode-workshop-$USER_NAME"
+        STACK_NAME="vscode-server-$USER_NAME"
     fi
 
     if [[ -z "$COMMAND" ]]; then
@@ -186,65 +174,13 @@ check_template() {
     fi
 }
 
-# メールアドレス検証
-validate_email() {
-    local email="$1"
-    if [[ ! "$email" =~ ^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]]; then
-        log_error "無効なメールアドレス形式: $email"
-        return 1
-    fi
-    return 0
-}
-
-# パスワード検証
-validate_password() {
-    local password="$1"
-    if [[ ${#password} -lt 8 ]]; then
-        log_error "パスワードは8文字以上である必要があります"
-        return 1
-    fi
-    if [[ ! "$password" =~ [A-Z] ]]; then
-        log_error "パスワードに大文字が含まれている必要があります"
-        return 1
-    fi
-    if [[ ! "$password" =~ [a-z] ]]; then
-        log_error "パスワードに小文字が含まれている必要があります"
-        return 1
-    fi
-    if [[ ! "$password" =~ [0-9] ]]; then
-        log_error "パスワードに数字が含まれている必要があります"
-        return 1
-    fi
-    return 0
-}
-
 # スタック作成
 create_stack() {
-    if [[ -z "$ADMIN_EMAIL" ]]; then
-        log_error "管理者メールアドレスが指定されていません (-e オプション)"
-        exit 1
-    fi
-
-    if [[ -z "$ADMIN_PASSWORD" ]]; then
-        log_error "管理者パスワードが指定されていません (-p オプション)"
-        exit 1
-    fi
-
-    # 入力検証
-    if ! validate_email "$ADMIN_EMAIL"; then
-        exit 1
-    fi
-
-    if ! validate_password "$ADMIN_PASSWORD"; then
-        exit 1
-    fi
-
-    log_info "🚀 VS Code Workshopスタックを作成中..."
+    log_info "🚀 VS Code Serverスタックを作成中..."
     log_info "スタック名: $STACK_NAME"
     log_info "リージョン: $REGION"
     log_info "インスタンスタイプ: $INSTANCE_TYPE"
-    log_cognito "管理者メール: $ADMIN_EMAIL"
-    log_info "パスワード: [HIDDEN]"
+    log_info "VS Codeユーザー: $VSCODE_USER"
 
     check_template
 
@@ -252,15 +188,15 @@ create_stack() {
         --stack-name "$STACK_NAME" \
         --template-body "file://$TEMPLATE_FILE" \
         --parameters \
-            "ParameterKey=AdminEmail,ParameterValue=$ADMIN_EMAIL" \
-            "ParameterKey=AdminPassword,ParameterValue=$ADMIN_PASSWORD" \
+            "ParameterKey=VSCodeServerUser,ParameterValue=$VSCODE_USER" \
             "ParameterKey=InstanceType,ParameterValue=$INSTANCE_TYPE" \
+            "ParameterKey=InstanceName,ParameterValue=$STACK_NAME" \
         --capabilities CAPABILITY_IAM \
         --region "$REGION"
 
     log_success "スタック作成を開始しました"
     log_info "📊 進捗を監視するには: $0 monitor -n $STACK_NAME -r $REGION"
-    log_info "⏱️  作成完了まで約5-10分かかります"
+    log_info "⏱️  作成完了まで約10-15分かかります"
 }
 
 # スタック状態確認
@@ -320,9 +256,9 @@ show_creation_progress() {
 monitor_stack() {
     log_info "📊 スタック進捗を監視中: $STACK_NAME"
     log_info "Ctrl+C で監視を終了"
-    
+
     local start_time=$(date +%s)
-    
+
     while true; do
         local status
         status=$(aws cloudformation describe-stacks \
@@ -370,26 +306,38 @@ monitor_stack() {
 # クイック情報表示
 show_quick_info() {
     echo ""
-    log_success "🎯 ワークショップ準備完了!"
+    log_success "🎯 VS Code Server準備完了!"
     echo ""
-    
-    local workshop_url
-    workshop_url=$(aws cloudformation describe-stacks \
+
+    local vscode_url password
+    vscode_url=$(aws cloudformation describe-stacks \
         --stack-name "$STACK_NAME" \
         --region "$REGION" \
-        --query 'Stacks[0].Outputs[?OutputKey==`WorkshopURL`].OutputValue' \
+        --query 'Stacks[0].Outputs[?OutputKey==`URL`].OutputValue' \
         --output text 2>/dev/null)
 
-    if [[ -n "$workshop_url" && "$workshop_url" != "None" ]]; then
+    password=$(aws cloudformation describe-stacks \
+        --stack-name "$STACK_NAME" \
+        --region "$REGION" \
+        --query 'Stacks[0].Outputs[?OutputKey==`Password`].OutputValue' \
+        --output text 2>/dev/null)
+
+    if [[ -n "$vscode_url" && "$vscode_url" != "None" ]]; then
         log_vscode "🌐 VS Code Server URL:"
-        echo "   $workshop_url"
+        echo "   $vscode_url"
+        echo ""
+    fi
+
+    if [[ -n "$password" && "$password" != "None" ]]; then
+        log_info "🔑 ログインパスワード:"
+        echo "   $password"
         echo ""
     fi
 
     log_info "📋 次のステップ:"
-    echo "   1. $0 login -n $STACK_NAME     # ログイン情報を確認"
-    echo "   2. $0 open -n $STACK_NAME      # ブラウザでオープン"
-    echo "   3. 上記URLにアクセスしてログイン"
+    echo "   1. $0 open -n $STACK_NAME      # ブラウザでオープン"
+    echo "   2. $0 connect -n $STACK_NAME   # SSMでEC2に接続"
+    echo "   3. 上記URLにアクセスしてVS Code Serverを使用"
     echo ""
 }
 
@@ -403,233 +351,73 @@ show_outputs() {
         --output table 2>/dev/null || log_warning "出力値を取得できませんでした"
 }
 
-# ログイン情報表示
-show_login_info() {
-    log_cognito "🔑 ログイン情報:"
-    
-    local login_info
-    login_info=$(aws cloudformation describe-stacks \
+# EC2インスタンスに接続
+connect_to_instance() {
+    log_info "🔌 EC2インスタンスに接続中..."
+
+    # インスタンスIDを取得
+    local instance_id
+    instance_id=$(aws cloudformation describe-stack-resources \
         --stack-name "$STACK_NAME" \
         --region "$REGION" \
-        --query 'Stacks[0].Outputs[?OutputKey==`LoginCredentials`].OutputValue' \
+        --logical-resource-id VSCodeServerInstance \
+        --query 'StackResources[0].PhysicalResourceId' \
         --output text 2>/dev/null)
 
-    if [[ -n "$login_info" && "$login_info" != "None" ]]; then
-        echo "$login_info"
-    else
-        log_warning "ログイン情報を取得できませんでした"
+    if [[ -z "$instance_id" || "$instance_id" == "None" ]]; then
+        log_error "インスタンスIDを取得できませんでした"
+        return 1
     fi
 
+    log_info "インスタンスID: $instance_id"
+    log_info "ユーザー: $VSCODE_USER"
+    log_info "Session Manager Pluginが必要です"
     echo ""
-    
-    local workshop_url
-    workshop_url=$(aws cloudformation describe-stacks \
-        --stack-name "$STACK_NAME" \
-        --region "$REGION" \
-        --query 'Stacks[0].Outputs[?OutputKey==`WorkshopURL`].OutputValue' \
-        --output text 2>/dev/null)
 
-    if [[ -n "$workshop_url" && "$workshop_url" != "None" ]]; then
-        log_vscode "🌐 アクセスURL:"
-        echo "   $workshop_url"
-    fi
-    
-    echo ""
-    local cognito_login_url
-    cognito_login_url=$(aws cloudformation describe-stacks \
-        --stack-name "$STACK_NAME" \
-        --region "$REGION" \
-        --query 'Stacks[0].Outputs[?OutputKey==`CognitoLoginURL`].OutputValue' \
-        --output text 2>/dev/null)
-    
-    if [[ -n "$cognito_login_url" && "$cognito_login_url" != "None" ]]; then
-        log_cognito "🔗 直接CognitoログインURL:"
-        echo "   $cognito_login_url"
-    fi
-    
-    echo ""
-    log_info "💡 ブラウザでオープンするには: $0 open -n $STACK_NAME"
+    # SSM Session Manager で接続
+    aws ssm start-session \
+        --target "$instance_id" \
+        --region "$REGION"
 }
 
 # ブラウザでオープン
 open_browser() {
-    local workshop_url
-    workshop_url=$(aws cloudformation describe-stacks \
+    local vscode_url
+    vscode_url=$(aws cloudformation describe-stacks \
         --stack-name "$STACK_NAME" \
         --region "$REGION" \
-        --query 'Stacks[0].Outputs[?OutputKey==`WorkshopURL`].OutputValue' \
+        --query 'Stacks[0].Outputs[?OutputKey==`URL`].OutputValue' \
         --output text 2>/dev/null)
 
-    if [[ -z "$workshop_url" || "$workshop_url" == "None" ]]; then
-        log_error "Workshop URLを取得できませんでした"
+    if [[ -z "$vscode_url" || "$vscode_url" == "None" ]]; then
+        log_error "VS Code Server URLを取得できませんでした"
         return 1
     fi
 
     log_vscode "🌐 VS Code Serverをブラウザでオープン中..."
-    log_info "URL: $workshop_url"
+    log_info "URL: $vscode_url"
 
     # OS判定してブラウザオープン
     case "$(uname -s)" in
         Darwin)
-            open "$workshop_url"
+            open "$vscode_url"
             ;;
         Linux)
             if command -v xdg-open > /dev/null; then
-                xdg-open "$workshop_url"
+                xdg-open "$vscode_url"
             else
                 log_warning "ブラウザを自動オープンできません。手動で以下のURLにアクセスしてください:"
-                echo "$workshop_url"
+                echo "$vscode_url"
             fi
             ;;
         CYGWIN*|MINGW32*|MSYS*|MINGW*)
-            start "$workshop_url"
+            start "$vscode_url"
             ;;
         *)
             log_warning "ブラウザを自動オープンできません。手動で以下のURLにアクセスしてください:"
-            echo "$workshop_url"
+            echo "$vscode_url"
             ;;
     esac
-}
-
-# Cognito詳細情報表示
-show_cognito_details() {
-    log_cognito "🔐 Cognito詳細情報:"
-    
-    local cognito_details
-    cognito_details=$(aws cloudformation describe-stacks \
-        --stack-name "$STACK_NAME" \
-        --region "$REGION" \
-        --query 'Stacks[0].Outputs[?OutputKey==`CognitoDetails`].OutputValue' \
-        --output text 2>/dev/null)
-
-    if [[ -n "$cognito_details" && "$cognito_details" != "None" ]]; then
-        echo "$cognito_details"
-        
-        # OAuth設定を確認
-        check_oauth_settings
-    else
-        log_warning "Cognito詳細情報を取得できませんでした"
-    fi
-}
-
-# OAuth設定確認と修正
-check_oauth_settings() {
-    log_cognito "🔍 OAuth設定を確認中..."
-    
-    # User Pool IDとClient IDを取得
-    local user_pool_id client_id
-    user_pool_id=$(aws cloudformation describe-stack-resources \
-        --stack-name "$STACK_NAME" \
-        --region "$REGION" \
-        --logical-resource-id CognitoUserPool \
-        --query 'StackResources[0].PhysicalResourceId' \
-        --output text 2>/dev/null)
-    
-    client_id=$(aws cloudformation describe-stack-resources \
-        --stack-name "$STACK_NAME" \
-        --region "$REGION" \
-        --logical-resource-id CognitoUserPoolClient \
-        --query 'StackResources[0].PhysicalResourceId' \
-        --output text 2>/dev/null)
-    
-    if [[ -z "$user_pool_id" || -z "$client_id" ]]; then
-        log_warning "CognitoリソースIDを取得できませんでした"
-        return 1
-    fi
-    
-    # OAuth設定を確認
-    local oauth_flows oauth_scopes
-    oauth_flows=$(aws cognito-idp describe-user-pool-client \
-        --user-pool-id "$user_pool_id" \
-        --client-id "$client_id" \
-        --region "$REGION" \
-        --query 'UserPoolClient.AllowedOAuthFlows' \
-        --output text 2>/dev/null)
-    
-    oauth_scopes=$(aws cognito-idp describe-user-pool-client \
-        --user-pool-id "$user_pool_id" \
-        --client-id "$client_id" \
-        --region "$REGION" \
-        --query 'UserPoolClient.AllowedOAuthScopes' \
-        --output text 2>/dev/null)
-    
-    if [[ "$oauth_flows" == "None" || "$oauth_scopes" == "None" ]]; then
-        log_warning "⚠️  OAuth設定が不完全です"
-        echo "   OAuth Flows: $oauth_flows"
-        echo "   OAuth Scopes: $oauth_scopes"
-        
-        read -p "🔧 OAuth設定を修正しますか？ (y/N): " -n 1 -r
-        echo
-        if [[ $REPLY =~ ^[Yy]$ ]]; then
-            fix_oauth_settings "$user_pool_id" "$client_id"
-        fi
-    else
-        log_success "✅ OAuth設定は正常です"
-        echo "   OAuth Flows: $oauth_flows"
-        echo "   OAuth Scopes: $oauth_scopes"
-    fi
-}
-
-# OAuth設定修正
-fix_oauth_settings() {
-    local user_pool_id="$1"
-    local client_id="$2"
-    
-    log_cognito "🔧 OAuth設定を修正中..."
-    
-    # CloudFrontドメインを取得
-    local cloudfront_domain
-    cloudfront_domain=$(aws cloudformation describe-stacks \
-        --stack-name "$STACK_NAME" \
-        --region "$REGION" \
-        --query 'Stacks[0].Outputs[?OutputKey==`Configuration`].OutputValue' \
-        --output text | grep "CloudFront Domain" | cut -d: -f2 | xargs)
-    
-    if [[ -z "$cloudfront_domain" ]]; then
-        log_error "CloudFrontドメインを取得できませんでした"
-        return 1
-    fi
-    
-    # OAuth設定を更新
-    if aws cognito-idp update-user-pool-client \
-        --user-pool-id "$user_pool_id" \
-        --client-id "$client_id" \
-        --region "$REGION" \
-        --callback-urls "https://$cloudfront_domain/oauth/callback" \
-        --logout-urls "https://$cloudfront_domain/" \
-        --allowed-o-auth-flows "code" \
-        --allowed-o-auth-scopes "openid" "email" "profile" \
-        --allowed-o-auth-flows-user-pool-client \
-        --supported-identity-providers "COGNITO" >/dev/null 2>&1; then
-        
-        log_success "✅ OAuth設定を修正しました"
-        echo "   Callback URL: https://$cloudfront_domain/oauth/callback"
-        echo "   OAuth Flows: code"
-        echo "   OAuth Scopes: openid, email, profile"
-    else
-        log_error "❌ OAuth設定の修正に失敗しました"
-        return 1
-    fi
-}
-
-# 直接CognitoログインURL表示
-show_direct_login() {
-    log_cognito "🔗 直接CognitoログインURL:"
-    
-    local cognito_login_url
-    cognito_login_url=$(aws cloudformation describe-stacks \
-        --stack-name "$STACK_NAME" \
-        --region "$REGION" \
-        --query 'Stacks[0].Outputs[?OutputKey==`CognitoLoginURL`].OutputValue' \
-        --output text 2>/dev/null)
-    
-    if [[ -n "$cognito_login_url" && "$cognito_login_url" != "None" ]]; then
-        echo "$cognito_login_url"
-        echo ""
-        log_info "💡 このURLをブラウザで開いてログインしてください"
-    else
-        log_warning "CognitoログインURLを取得できませんでした"
-    fi
 }
 
 # エラー表示
@@ -657,14 +445,14 @@ delete_stack() {
     log_warning "⚠️  スタックを削除します: $STACK_NAME"
     log_warning "これにより以下が削除されます:"
     echo "   • EC2インスタンス"
-    echo "   • Cognito User Pool"
     echo "   • CloudFront Distribution"
+    echo "   • セキュリティグループ"
     echo "   • 全ての関連リソース"
     echo ""
-    
+
     read -p "本当に削除しますか? (y/N): " -n 1 -r
     echo
-    
+
     if [[ ! $REPLY =~ ^[Yy]$ ]]; then
         log_info "削除をキャンセルしました"
         return 0
@@ -680,11 +468,11 @@ delete_stack() {
 
 # スタック一覧
 list_stacks() {
-    log_info "📋 VS Code Workshopスタック一覧 (リージョン: $REGION):"
+    log_info "📋 VS Code Serverスタック一覧 (リージョン: $REGION):"
     aws cloudformation list-stacks \
         --region "$REGION" \
         --stack-status-filter CREATE_COMPLETE CREATE_IN_PROGRESS UPDATE_COMPLETE DELETE_IN_PROGRESS \
-        --query 'StackSummaries[?contains(StackName, `vscode`) || contains(StackName, `workshop`)].[StackName,StackStatus,CreationTime]' \
+        --query 'StackSummaries[?contains(StackName, `vscode`) || contains(StackName, `server`)].[StackName,StackStatus,CreationTime]' \
         --output table
 }
 
@@ -692,7 +480,7 @@ list_stacks() {
 validate_template() {
     check_template
     log_info "🔍 テンプレートを検証中: $TEMPLATE_FILE"
-    
+
     if aws cloudformation validate-template \
         --template-body "file://$TEMPLATE_FILE" \
         --region "$REGION" > /dev/null; then
@@ -721,20 +509,11 @@ main() {
         outputs)
             show_outputs
             ;;
-        login)
-            show_login_info
+        connect)
+            connect_to_instance
             ;;
         open)
             open_browser
-            ;;
-        cognito)
-            show_cognito_details
-            ;;
-        fix-oauth)
-            check_oauth_settings
-            ;;
-        direct-login)
-            show_direct_login
             ;;
         logs)
             show_logs

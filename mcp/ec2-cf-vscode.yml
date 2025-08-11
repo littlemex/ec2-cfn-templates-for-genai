@@ -1,79 +1,85 @@
-AWSTemplateFormatVersion: '2010-09-09'
-Description: VS Code Server with Complete Cognito Setup - Just provide email and password!
-
+Description: Create a vscode-server instance with an Amazon CloudFront distribution for use in Workshop Studio. Version 5.1.1
 Parameters:
-  # 🎯 これだけ設定すればOK！
-  AdminEmail:
+  VSCodeServerUser:
     Type: String
-    Description: Admin user email address for login
-    AllowedPattern: ^[^\s@]+@[^\s@]+\.[^\s@]+$
-    ConstraintDescription: Must be a valid email address
-  
-  AdminPassword:
-    Type: String
-    Description: Admin user password (minimum 8 characters)
-    NoEcho: true
-    MinLength: 8
-    AllowedPattern: ^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)[a-zA-Z\d@$!%*?&._-]{8,}$
-    ConstraintDescription: Must contain at least 8 characters with uppercase, lowercase, and number
-  
-  # 基本設定（既存から流用）
-  CodeServerUser:
-    Type: String
-    Description: UserName for code-server
-    Default: participant
-  
+    Description: UserName for vscode-server
+    Default: coder
   InstanceName:
     Type: String
-    Description: Code-server EC2 instance name
-    Default: CodeServerInstance
-  
+    Description: VSCode-server EC2 instance name
+    Default: VSCodeServer
   InstanceVolumeSize:
     Type: Number
-    Description: Code-server EC2 instance volume size in GB
+    Description: VSCode-server EC2 instance volume size in GB
     Default: 40
-  
   InstanceType:
-    Description: Code-server EC2 instance type
+    Description: VSCode-server EC2 instance type
     Type: String
     Default: c7i.4xlarge
-  
   InstanceOperatingSystem:
-    Description: Code-server EC2 operating system
+    Description: VSCode-server EC2 operating system
     Type: String
     Default: Ubuntu-22
     AllowedValues: ['Ubuntu-22', 'Ubuntu-24']
-  
   HomeFolder:
     Type: String
-    Description: Folder to open in code-server
-    Default: /workshop
-  
+    Description: Folder to open in vscode-server
+    Default: /work
   DevServerBasePath:
     Type: String
-    Description: Base path for the application
+    Description: Base path for the application to be added to Nginx sites-available list
     Default: app
-  
   DevServerPort:
     Type: Number
     Description: Port for the DevServer
     Default: 8081
-  
   RepoUrl:
-    Description: Remote repo URL to clone
+    Description: Remote repo URL to clone. To not clone a remote repo, leave blank
     Type: String
-    Default: ''
-  
-  AssetZipS3Path:
-    Description: S3 path for workshop assets
-    Type: String
-    Default: https://ws-assets-prod-iad-r-pdx-f3b3f9f1a7d6a3d0.s3.us-west-2.amazonaws.com/33b9f640-2cab-47f0-bfdd-d3aab3c38eee/bedrock-agent-knowledge-base-actions-workshop-main-wsstudio.zip
+    Default: 'https://github.com/littlemex/samples.git'
 
 Conditions:
-  IsAL2023: !Equals [!Ref InstanceOperatingSystem, 'AmazonLinux-2023']
   IsGraviton:
     !Not [!Equals [!Select [0, !Split ['g', !Select [0, !Split ['.', !Ref InstanceType]]]],
                    !Select [0, !Split ['.', !Ref InstanceType]],],]
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Instance Configuration
+        Parameters:
+          - InstanceName
+          - InstanceVolumeSize
+          - InstanceType
+          - InstanceOperatingSystem
+      - Label:
+          default: VSCode-server Configuration
+        Parameters:
+          - VSCodeServerUser
+          - HomeFolder
+          - DevServerBasePath
+          - DevServerPort
+          - RepoUrl
+    ParameterLabels:
+      VSCodeServerUser:
+        default: VSCode-server user name
+      InstanceName:
+        default: Instance name
+      InstanceVolumeSize:
+        default: Instance volume size
+      InstanceType:
+        default: Instance type
+      InstanceOperatingSystem:
+        default: Instance operating system
+      HomeFolder:
+        default: VSCode-server home folder
+      DevServerBasePath:
+        default: Application base path
+      DevServerPort:
+        default: Application port
+      RepoUrl:
+        default: Git repo URL
 
 Mappings:
   ArmImage:
@@ -81,17 +87,11 @@ Mappings:
       ImageId: '{{resolve:ssm:/aws/service/canonical/ubuntu/server/jammy/stable/current/arm64/hvm/ebs-gp2/ami-id}}'
     Ubuntu-24:
       ImageId: '{{resolve:ssm:/aws/service/canonical/ubuntu/server/noble/stable/current/arm64/hvm/ebs-gp3/ami-id}}'
-    AmazonLinux-2023:
-      ImageId: '{{resolve:ssm:/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-arm64}}'
-  
   AmdImage:
     Ubuntu-22:
       ImageId: '{{resolve:ssm:/aws/service/canonical/ubuntu/server/jammy/stable/current/amd64/hvm/ebs-gp2/ami-id}}'
     Ubuntu-24:
       ImageId: '{{resolve:ssm:/aws/service/canonical/ubuntu/server/noble/stable/current/amd64/hvm/ebs-gp3/ami-id}}'
-    AmazonLinux-2023:
-      ImageId: '{{resolve:ssm:/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64}}'
-  
   AWSRegionsPrefixListID:
     ap-northeast-1:
       PrefixList: pl-58a04531
@@ -127,88 +127,22 @@ Mappings:
       PrefixList: pl-82a045eb
 
 Resources:
-  # 🚀 Cognito User Pool 自動作成
-  CognitoUserPool:
-    Type: AWS::Cognito::UserPool
+  VSCodeServerSecret:
+    Type: AWS::SecretsManager::Secret
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
     Properties:
-      UserPoolName: !Sub ${AWS::StackName}-workshop-users
-      # ワークショップ用の簡単設定
-      Policies:
-        PasswordPolicy:
-          MinimumLength: 8
-          RequireUppercase: true
-          RequireLowercase: true
-          RequireNumbers: true
-          RequireSymbols: false
-          TemporaryPasswordValidityDays: 1
-      # メール設定
-      AutoVerifiedAttributes:
-        - email
-      UsernameAttributes:
-        - email
-      # ワークショップ用の簡単なメール設定
-      EmailConfiguration:
-        EmailSendingAccount: COGNITO_DEFAULT
-      # ユーザー登録設定
-      AdminCreateUserConfig:
-        AllowAdminCreateUserOnly: true  # 管理者のみがユーザー作成可能
-      # 属性設定
-      Schema:
-        - Name: email
-          AttributeDataType: String
-          Required: true
-          Mutable: true
-      UserPoolTags:
-        Purpose: Workshop
-        CreatedBy: CloudFormation
+      Name: !Sub
+        - '${InstanceName}-${RandomGUID}'
+        - RandomGUID: !Select [0, !Split ['-', !Select [2, !Split ['/', !Ref AWS::StackId]]]]
+      Description: VSCode-server user details
+      GenerateSecretString:
+        PasswordLength: 16
+        SecretStringTemplate: !Sub '{"username":"${VSCodeServerUser}"}'
+        GenerateStringKey: 'password'
+        ExcludePunctuation: true
 
-  # 🔧 Cognito User Pool Domain 自動作成
-  CognitoUserPoolDomain:
-    Type: AWS::Cognito::UserPoolDomain
-    Properties:
-      Domain: !Sub ${AWS::StackName}-workshop-${AWS::AccountId}
-      UserPoolId: !Ref CognitoUserPool
-
-  # 📱 Cognito App Client 自動作成（初期版）
-  CognitoUserPoolClient:
-    Type: AWS::Cognito::UserPoolClient
-    Properties:
-      ClientName: !Sub ${AWS::StackName}-workshop-client
-      UserPoolId: !Ref CognitoUserPool
-      # OAuth設定（最初から設定）
-      AllowedOAuthFlows:
-        - code
-      AllowedOAuthScopes:
-        - openid
-        - email
-        - profile
-      AllowedOAuthFlowsUserPoolClient: true
-      CallbackURLs:
-        - https://example.com/callback  # 一時的なURL（UpdateCognitoClientで更新）
-        - https://localhost/oauth/callback  # ローカルテスト用
-      LogoutURLs:
-        - https://example.com/  # 一時的なURL（UpdateCognitoClientで更新）
-        - https://localhost/  # ローカルテスト用
-      # セキュリティ設定
-      GenerateSecret: true
-      PreventUserExistenceErrors: ENABLED
-      # トークン設定（ワークショップ用）
-      AccessTokenValidity: 1  # 1時間
-      IdTokenValidity: 1      # 1時間
-      RefreshTokenValidity: 1 # 1日
-      TokenValidityUnits:
-        AccessToken: hours
-        IdToken: hours
-        RefreshToken: days
-      # 認証フロー
-      ExplicitAuthFlows:
-        - ALLOW_ADMIN_USER_PASSWORD_AUTH
-        - ALLOW_REFRESH_TOKEN_AUTH
-      SupportedIdentityProviders:
-        - COGNITO
-
-  # Cognito App Client更新用Lambda
-  UpdateCognitoClientLambdaRole:
+  SecretPlaintextLambdaRole:
     Type: AWS::IAM::Role
     Properties:
       AssumeRolePolicyDocument:
@@ -216,31 +150,35 @@ Resources:
         Statement:
           - Effect: Allow
             Principal:
-              Service: lambda.amazonaws.com
+              Service: !Sub lambda.${AWS::URLSuffix}
             Action: sts:AssumeRole
       ManagedPolicyArns:
-        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - !Sub arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
       Policies:
-        - PolicyName: CognitoUpdatePolicy
+        - PolicyName: AwsSecretsManagerPolicy
           PolicyDocument:
             Version: 2012-10-17
             Statement:
               - Effect: Allow
                 Action:
-                  - cognito-idp:UpdateUserPoolClient
-                Resource: !GetAtt CognitoUserPool.Arn
+                  - secretsmanager:GetSecretValue
+                Resource: !Ref VSCodeServerSecret
 
-  UpdateCognitoClientLambda:
+  SecretPlaintextLambda:
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName: !Sub ${AWS::StackName}-update-cognito-client
-      Runtime: python3.11
+      Description: Return the value of the secret
       Handler: index.lambda_handler
-      Role: !GetAtt UpdateCognitoClientLambdaRole.Arn
-      Timeout: 60
+      Runtime: python3.13
+      MemorySize: 128
+      Timeout: 10
+      Architectures:
+        - x86_64
+      Role: !GetAtt SecretPlaintextLambdaRole.Arn
       Code:
         ZipFile: |
           import boto3
+          import json
           import cfnresponse
           import logging
           
@@ -248,162 +186,266 @@ Resources:
           logger.setLevel(logging.INFO)
           
           def lambda_handler(event, context):
+              logger.info(f'Event: {json.dumps(event)}')
+              
               try:
                   if event['RequestType'] == 'Delete':
-                      cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
+                      cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData={}, reason='No action to take')
                       return
                   
-                  user_pool_id = event['ResourceProperties']['UserPoolId']
-                  client_id = event['ResourceProperties']['ClientId']
-                  cloudfront_domain = event['ResourceProperties']['CloudFrontDomain']
+                  secret_name = event['ResourceProperties']['SecretArn']
+                  logger.info(f'Getting secret from {secret_name}')
                   
-                  cognito = boto3.client('cognito-idp')
-                  
-                  # App Clientを更新してCloudFrontドメインとOAuth設定を設定
-                  cognito.update_user_pool_client(
-                      UserPoolId=user_pool_id,
-                      ClientId=client_id,
-                      CallbackURLs=[
-                          f'https://{cloudfront_domain}/oauth/callback'
-                      ],
-                      LogoutURLs=[
-                          f'https://{cloudfront_domain}/'
-                      ],
-                      AllowedOAuthFlows=['code'],
-                      AllowedOAuthScopes=['openid', 'email', 'profile'],
-                      AllowedOAuthFlowsUserPoolClient=True,
-                      SupportedIdentityProviders=['COGNITO']
-                  )
-                  
-                  logger.info(f'Updated Cognito client with CloudFront domain: {cloudfront_domain}')
-                  cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
-                  
-              except Exception as e:
-                  logger.error(f'Error: {str(e)}')
-                  cfnresponse.send(event, context, cfnresponse.FAILED, {}, str(e))
-
-  UpdateCognitoClient:
-    Type: Custom::UpdateCognitoClient
-    DependsOn: CloudFrontDistribution
-    Properties:
-      ServiceToken: !GetAtt UpdateCognitoClientLambda.Arn
-      UserPoolId: !Ref CognitoUserPool
-      ClientId: !Ref CognitoUserPoolClient
-      CloudFrontDomain: !GetAtt CloudFrontDistribution.DomainName
-
-  # � 管理理者ユーザーの作成とパスワード設定
-  SetPermanentPasswordLambdaRole:
-    Type: AWS::IAM::Role
-    Properties:
-      AssumeRolePolicyDocument:
-        Version: 2012-10-17
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service: lambda.amazonaws.com
-            Action: sts:AssumeRole
-      ManagedPolicyArns:
-        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
-      Policies:
-        - PolicyName: CognitoAdminPolicy
-          PolicyDocument:
-            Version: 2012-10-17
-            Statement:
-              - Effect: Allow
-                Action:
-                  - cognito-idp:AdminSetUserPassword
-                  - cognito-idp:AdminUpdateUserAttributes
-                  - cognito-idp:AdminCreateUser
-                  - cognito-idp:AdminGetUser
-                Resource: !GetAtt CognitoUserPool.Arn
-
-  SetPermanentPasswordLambda:
-    Type: AWS::Lambda::Function
-    Properties:
-      FunctionName: !Sub ${AWS::StackName}-set-permanent-password
-      Runtime: python3.11
-      Handler: index.lambda_handler
-      Role: !GetAtt SetPermanentPasswordLambdaRole.Arn
-      Timeout: 60
-      Code:
-        ZipFile: |
-          import boto3
-          import cfnresponse
-          import logging
-          
-          logger = logging.getLogger()
-          logger.setLevel(logging.INFO)
-          
-          def lambda_handler(event, context):
-              try:
-                  if event['RequestType'] == 'Delete':
-                      cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
-                      return
-                  
-                  user_pool_id = event['ResourceProperties']['UserPoolId']
-                  username = event['ResourceProperties']['Username']
-                  password = event['ResourceProperties']['Password']
-                  email = event['ResourceProperties']['Email']
-                  
-                  cognito = boto3.client('cognito-idp')
+                  secrets_mgr = boto3.client('secretsmanager')
+                  secret = secrets_mgr.get_secret_value(SecretId=secret_name)
+                  secret_value = secret['SecretString']
                   
                   try:
-                      # ユーザーが存在するか確認
-                      response = cognito.admin_get_user(
-                          UserPoolId=user_pool_id,
-                          Username=username
-                      )
-                      logger.info(f'User {username} already exists')
-                  except Exception as e:
-                      if 'UserNotFoundException' in str(e):
-                          # ユーザーが存在しない場合は作成
-                          logger.info(f'User {username} not found, creating new user')
-                          cognito.admin_create_user(
-                              UserPoolId=user_pool_id,
-                              Username=username,
-                              UserAttributes=[
-                                  {
-                                      'Name': 'email',
-                                      'Value': email
-                                  },
-                                  {
-                                      'Name': 'email_verified',
-                                      'Value': 'true'
-                                  }
-                              ],
-                              MessageAction='SUPPRESS'
-                          )
-                          logger.info(f'Created user: {username}')
-                      else:
-                          logger.error(f'Error checking user existence: {str(e)}')
-                          raise e
+                      responseData = json.loads(secret_value)
+                  except json.JSONDecodeError:
+                      responseData = {'secret': secret_value}
                   
-                  # パスワードを永続化
-                  cognito.admin_set_user_password(
-                      UserPoolId=user_pool_id,
-                      Username=username,
-                      Password=password,
-                      Permanent=True
-                  )
-                  
-                  logger.info(f'Successfully set permanent password for user: {username}')
-                  cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
+                  logger.info('Successfully retrieved secret')
+                  cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData=responseData, reason='OK', noEcho=True)
                   
               except Exception as e:
                   logger.error(f'Error: {str(e)}')
-                  cfnresponse.send(event, context, cfnresponse.FAILED, {}, str(e))
+                  cfnresponse.send(event, context, cfnresponse.FAILED, responseData={}, reason=str(e))
 
-  SetPermanentPassword:
-    Type: Custom::SetPermanentPassword
+  SecretPlaintext:
+    Type: Custom::SecretPlaintextLambda
     Properties:
-      ServiceToken: !GetAtt SetPermanentPasswordLambda.Arn
-      UserPoolId: !Ref CognitoUserPool
-      Username: !Ref AdminEmail
-      Password: !Ref AdminPassword
-      Email: !Ref AdminEmail
+      ServiceToken: !GetAtt SecretPlaintextLambda.Arn
+      ServiceTimeout: 30
+      SecretArn: !Ref VSCodeServerSecret
 
-  # 🔐 App Client Secret 取得用Lambda
-  GetClientSecretLambdaRole:
+  VSCodeServerSSMDoc:
+    Type: AWS::SSM::Document
+    Properties:
+      DocumentType: Command
+      Content:
+        schemaVersion: '2.2'
+        description: Bootstrap vscode-server instance
+        parameters:
+          VSCodeServerPassword:
+            type: String
+            default: !Ref AWS::StackId
+        mainSteps:
+          - name: InstallCloudWatchAgent
+            action: aws:configurePackage
+            inputs:
+              name: AmazonCloudWatchAgent
+              action: Install
+          - name: ConfigureCloudWatchAgent
+            action: aws:runDocument
+            inputs:
+              documentType: SSMDocument
+              documentPath: AmazonCloudWatch-ManageAgent
+              documentParameters:
+                action: configure
+                mode: ec2
+                optionalConfigurationSource: default
+                optionalRestart: 'yes'
+          - name: InstallPackages
+            action: aws:runShellScript
+            precondition:
+              StringEquals:
+                - platformType
+                - Linux
+            inputs:
+              timeoutSeconds: 600
+              runCommand:
+                - '#!/bin/bash'
+                - dpkg --configure -a
+                - apt-get -q update && DEBIAN_FRONTEND=noninteractive apt-get install -y -q curl gnupg unzip nginx openssl python3-pip nodejs npm snapd
+                - systemctl enable --now snapd
+                - sleep 30
+                - ln -sf /var/lib/snapd/snap /snap
+          - name: AddUser
+            action: aws:runShellScript
+            inputs:
+              timeoutSeconds: 300
+              runCommand:
+                - '#!/bin/bash'
+                - !Sub |
+                  if [[ "${VSCodeServerUser}" == "ubuntu" ]]; then
+                    echo 'Using existing user: ${VSCodeServerUser}'
+                  else
+                    adduser --disabled-password --gecos '' ${VSCodeServerUser}
+                    echo "${VSCodeServerUser}:{{ VSCodeServerPassword }}" | chpasswd
+                    usermod -aG sudo ${VSCodeServerUser}
+                  fi
+                - !Sub |
+                  tee /etc/sudoers.d/91-vscode-user <<EOF
+                  ${VSCodeServerUser} ALL=(ALL) NOPASSWD:ALL
+                  EOF
+                - !Sub mkdir -p /home/${VSCodeServerUser} && chown -R ${VSCodeServerUser}:${VSCodeServerUser} /home/${VSCodeServerUser}
+          - name: UpdateProfile
+            action: aws:runShellScript
+            inputs:
+              timeoutSeconds: 300
+              runCommand:
+                - '#!/bin/bash'
+                - echo LANG=en_US.utf-8 >> /etc/environment
+                - echo LC_ALL=en_US.UTF-8 >> /etc/environment
+                - !Sub echo 'export AWS_REGION=${AWS::Region}' >> /home/${VSCodeServerUser}/.bashrc
+                - !Sub echo 'export AWS_ACCOUNTID=${AWS::AccountId}' >> /home/${VSCodeServerUser}/.bashrc
+                - !Sub chown -R ${VSCodeServerUser}:${VSCodeServerUser} /home/${VSCodeServerUser}
+          - name: InstallAWSCLI
+            action: aws:runShellScript
+            inputs:
+              timeoutSeconds: 300
+              runCommand:
+                - '#!/bin/bash'
+                - curl -fsSL https://awscli.amazonaws.com/awscli-exe-linux-$(uname -m).zip -o /tmp/aws-cli.zip
+                - unzip -q -d /tmp /tmp/aws-cli.zip
+                - /tmp/aws/install
+                - rm -rf /tmp/aws
+          - name: InstallSessionManagerPlugin
+            action: aws:runShellScript
+            inputs:
+              timeoutSeconds: 300
+              runCommand:
+                - '#!/bin/bash'
+                - curl -fsSL https://s3.amazonaws.com/session-manager-downloads/plugin/latest/ubuntu_64bit/session-manager-plugin.deb -o /tmp/session-manager-plugin.deb
+                - dpkg -i /tmp/session-manager-plugin.deb
+                - rm -f /tmp/session-manager-plugin.deb
+          - name: InstallGit
+            action: aws:runShellScript
+            precondition:
+              StringEquals:
+                - platformType
+                - Linux
+            inputs:
+              timeoutSeconds: 300
+              runCommand:
+                - '#!/bin/bash'
+                - add-apt-repository ppa:git-core/ppa -y
+                - apt-get -q update && DEBIAN_FRONTEND=noninteractive apt-get install -y -q git
+                - !Sub sudo -u ${VSCodeServerUser} git config --global user.email "coder@example.com"
+                - !Sub sudo -u ${VSCodeServerUser} git config --global user.name "Workshop coder"
+                - !Sub sudo -u ${VSCodeServerUser} git config --global init.defaultBranch "main"
+          - name: CloneRepo
+            action: aws:runShellScript
+            inputs:
+              timeoutSeconds: 600
+              runCommand:
+                - '#!/bin/bash'
+                - !Sub |
+                  if [[ -z "${RepoUrl}" ]]; then
+                    echo "No Repo"
+                  else
+                    mkdir -p ${HomeFolder} && chown -R ${VSCodeServerUser}:${VSCodeServerUser} ${HomeFolder}
+                    sudo -u ${VSCodeServerUser} git clone ${RepoUrl} ${HomeFolder}
+                  fi
+          - name: ConfigureVSCodeServer
+            action: aws:runShellScript
+            inputs:
+              timeoutSeconds: 600
+              runCommand:
+                - '#!/bin/bash'
+                - snap install --classic code
+                - sleep 30
+                - ln -sf /snap/bin/code /usr/local/bin/code
+                - !Sub |
+                  cat > /etc/systemd/system/vscode-server.service << 'EOF'
+                  [Unit]
+                  Description=VS Code Server Service
+                  After=network.target snapd.service
+                  [Service]
+                  Type=simple
+                  User=${VSCodeServerUser}
+                  Group=${VSCodeServerUser}
+                  Environment="HOME=/home/${VSCodeServerUser}"
+                  Environment="SHELL=/bin/bash"
+                  Environment="PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/snap/bin"
+                  WorkingDirectory=${HomeFolder}
+                  Restart=always
+                  RestartSec=10
+                  ExecStart=/snap/bin/code serve-web --without-connection-token --accept-server-license-terms --host 0.0.0.0 --port 8080
+                  [Install]
+                  WantedBy=multi-user.target
+                  EOF
+                - !Sub mkdir -p /home/${VSCodeServerUser}/.config
+                - !Sub chown -R ${VSCodeServerUser}:${VSCodeServerUser} /home/${VSCodeServerUser}/.config
+                - !Sub mkdir -p ${HomeFolder}
+                - !Sub chown -R ${VSCodeServerUser}:${VSCodeServerUser} ${HomeFolder}
+                - systemctl daemon-reload
+                - systemctl enable vscode-server
+                - systemctl start vscode-server
+                - sleep 10
+                - systemctl status vscode-server
+          - name: ConfigureNginx
+            action: aws:runShellScript
+            precondition:
+              StringEquals:
+                - platformType
+                - Linux
+            inputs:
+              timeoutSeconds: 300
+              runCommand:
+                - '#!/bin/bash'
+                - |
+                  cat > /etc/nginx/sites-available/vscode << 'EOF'
+                  server {
+                      listen 80 default_server;
+                      listen [::]:80 default_server;
+                      server_name _;
+                      
+                      location / {
+                          proxy_pass http://127.0.0.1:8080;
+                          proxy_http_version 1.1;
+                          proxy_set_header Upgrade $http_upgrade;
+                          proxy_set_header Connection 'upgrade';
+                          proxy_set_header Host $host;
+                          proxy_set_header X-Real-IP $remote_addr;
+                          proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                          proxy_set_header X-Forwarded-Proto $scheme;
+                          proxy_cache_bypass $http_upgrade;
+                          proxy_read_timeout 86400;
+                          proxy_connect_timeout 60;
+                          proxy_send_timeout 60;
+                      }
+                  }
+                  EOF
+                - rm -f /etc/nginx/sites-enabled/default
+                - ln -sf /etc/nginx/sites-available/vscode /etc/nginx/sites-enabled/vscode
+                - /usr/sbin/nginx -t
+                - systemctl restart nginx
+                - systemctl enable nginx
+                - sleep 5
+                - systemctl status nginx
+
+          - name: Installuv
+            action: aws:runShellScript
+            precondition:
+              StringEquals:
+                - platformType
+                - Linux
+            inputs:
+              timeoutSeconds: 300
+              runCommand:
+                - '#!/bin/bash'
+                - !Sub sudo -u ${VSCodeServerUser} --login curl -fsSL https://astral.sh/uv/install.sh -o /tmp/uv_install.sh
+                - !Sub sudo -u ${VSCodeServerUser} --login bash /tmp/uv_install.sh
+                - !Sub echo 'eval "$(uv generate-shell-completion bash)"' >> /home/${VSCodeServerUser}/.bashrc || true
+          - name: InstallDocker
+            action: aws:runShellScript
+            precondition:
+              StringEquals:
+                - platformType
+                - Linux
+            inputs:
+              timeoutSeconds: 300
+              runCommand:
+                - '#!/bin/bash'
+                - curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+                - echo "deb [signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release --codename --short) stable" > /etc/apt/sources.list.d/docker.list
+                - apt-get -q update && DEBIAN_FRONTEND=noninteractive apt-get install -y -q docker-ce docker-ce-cli containerd.io
+                - !Sub usermod -aG docker ${VSCodeServerUser}
+                - systemctl start docker.service
+
+  SSMDocLambdaRole:
     Type: AWS::IAM::Role
     Properties:
       AssumeRolePolicyDocument:
@@ -411,72 +453,147 @@ Resources:
         Statement:
           - Effect: Allow
             Principal:
-              Service: lambda.amazonaws.com
+              Service: !Sub lambda.${AWS::URLSuffix}
             Action: sts:AssumeRole
       ManagedPolicyArns:
-        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - !Sub arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
       Policies:
-        - PolicyName: CognitoDescribePolicy
+        - PolicyName: SSMDocOnEC2Policy
           PolicyDocument:
             Version: 2012-10-17
             Statement:
               - Effect: Allow
                 Action:
-                  - cognito-idp:DescribeUserPoolClient
-                Resource: !GetAtt CognitoUserPool.Arn
+                  - ssm:SendCommand
+                Resource:
+                  - !Sub arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:document/${VSCodeServerSSMDoc}
+                  - !Sub arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:document/AmazonCloudWatch-ManageAgent
+                  - !Sub arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:instance/${VSCodeServerInstance}
+              - Effect: Allow
+                Action:
+                  - ssm:ListCommandInvocations
+                  - ssm:GetCommandInvocation
+                Resource: '*'
 
-  GetClientSecretLambda:
+  RunSSMDocLambda:
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName: !Sub ${AWS::StackName}-get-client-secret
-      Runtime: python3.11
+      Description: Run SSM document on EC2 instance
       Handler: index.lambda_handler
-      Role: !GetAtt GetClientSecretLambdaRole.Arn
-      Timeout: 60
+      Runtime: python3.13
+      MemorySize: 128
+      Timeout: 900
+      Environment:
+        Variables:
+          RetrySleep: 2900
+          AbortTimeRemaining: 3200
+      Architectures:
+        - x86_64
+      Role: !GetAtt SSMDocLambdaRole.Arn
       Code:
         ZipFile: |
           import boto3
           import cfnresponse
           import logging
+          import time
+          import os
+          import json
           
           logger = logging.getLogger()
           logger.setLevel(logging.INFO)
           
           def lambda_handler(event, context):
+              logger.info(f'Event: {json.dumps(event)}')
+              
               try:
-                  if event['RequestType'] == 'Delete':
-                      cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
+                  if event['RequestType'] != 'Create':
+                      logger.info('Not a Create request, returning success')
+                      cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData={}, reason='No action to take')
                       return
                   
-                  user_pool_id = event['ResourceProperties']['UserPoolId']
-                  client_id = event['ResourceProperties']['ClientId']
+                  sleep_ms = int(os.environ.get('RetrySleep', '2900'))
+                  abort_time_remaining_ms = int(os.environ.get('AbortTimeRemaining', '3200'))
                   
-                  cognito = boto3.client('cognito-idp')
+                  resource_properties = event['ResourceProperties'].copy()
+                  instance_id = resource_properties['InstanceId']
+                  document_name = resource_properties['DocumentName']
+                  cloudwatch_log_group_name = resource_properties['CloudWatchLogGroupName']
                   
-                  response = cognito.describe_user_pool_client(
-                      UserPoolId=user_pool_id,
-                      ClientId=client_id
-                  )
+                  logger.info(f'Running SSM Document {document_name} on instance {instance_id}')
                   
-                  client_secret = response['UserPoolClient']['ClientSecret']
+                  # Clean up resource properties
+                  for key in ['ServiceToken', 'ServiceTimeout', 'InstanceId', 'DocumentName', 'CloudWatchLogGroupName', 'PhysicalResourceId']:
+                      resource_properties.pop(key, None)
                   
-                  cfnresponse.send(event, context, cfnresponse.SUCCESS, {
-                      'ClientSecret': client_secret
-                  })
+                  # Convert to SSM parameters format
+                  parameters = {}
+                  for key, value in resource_properties.items():
+                      parameters[key] = [str(value)]
+                  
+                  logger.info(f'Parameters: {parameters}')
+                  
+                  ssm = boto3.client('ssm')
+                  retry = True
+                  attempt_no = 0
+                  
+                  while retry and attempt_no < 10:
+                      attempt_no += 1
+                      time_remaining_ms = context.get_remaining_time_in_millis()
+                      
+                      logger.info(f'Attempt {attempt_no}, time remaining: {time_remaining_ms}ms')
+                      
+                      try:
+                          response = ssm.send_command(
+                              InstanceIds=[instance_id],
+                              DocumentName=document_name,
+                              CloudWatchOutputConfig={
+                                  'CloudWatchLogGroupName': cloudwatch_log_group_name,
+                                  'CloudWatchOutputEnabled': True
+                              },
+                              Parameters=parameters
+                          )
+                          
+                          command_id = response['Command']['CommandId']
+                          logger.info(f'Command sent successfully: {command_id}')
+                          
+                          responseData = {'CommandId': command_id}
+                          cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData, reason='OK')
+                          return
+                          
+                      except ssm.exceptions.InvalidInstanceId as e:
+                          logger.warning(f'Instance not ready: {str(e)}')
+                          if time_remaining_ms > abort_time_remaining_ms:
+                              logger.info(f'Sleeping for {sleep_ms/1000}s')
+                              time.sleep(sleep_ms / 1000)
+                          else:
+                              logger.error('Timed out waiting for instance')
+                              cfnresponse.send(event, context, cfnresponse.FAILED, responseData={}, reason='Timed out waiting for instance')
+                              return
+                              
+                      except Exception as e:
+                          logger.error(f'Unexpected error: {str(e)}')
+                          cfnresponse.send(event, context, cfnresponse.FAILED, responseData={}, reason=str(e))
+                          return
+                  
+                  # If we get here, we've exceeded max attempts
+                  logger.error('Exceeded maximum retry attempts')
+                  cfnresponse.send(event, context, cfnresponse.FAILED, responseData={}, reason='Exceeded maximum retry attempts')
                   
               except Exception as e:
-                  logger.error(f'Error: {str(e)}')
-                  cfnresponse.send(event, context, cfnresponse.FAILED, {}, str(e))
+                  logger.error(f'Lambda handler error: {str(e)}')
+                  cfnresponse.send(event, context, cfnresponse.FAILED, responseData={}, reason=str(e))
 
-  GetClientSecret:
-    Type: Custom::GetClientSecret
+  RunVSCodeServerSSMDoc:
+    Type: Custom::RunSSMDocLambda
     Properties:
-      ServiceToken: !GetAtt GetClientSecretLambda.Arn
-      UserPoolId: !Ref CognitoUserPool
-      ClientId: !Ref CognitoUserPoolClient
+      ServiceToken: !GetAtt RunSSMDocLambda.Arn
+      ServiceTimeout: 305
+      InstanceId: !Ref VSCodeServerInstance
+      DocumentName: !Ref VSCodeServerSSMDoc
+      CloudWatchLogGroupName: !Sub /aws/ssm/${VSCodeServerSSMDoc}
+      VSCodeServerPassword: !GetAtt SecretPlaintext.password
 
-  # 既存のEC2関連リソース（流用）
-  CodeServerInstanceBootstrapRole:
+  VSCodeServerInstanceBootstrapRole:
     Type: AWS::IAM::Role
     Properties:
       AssumeRolePolicyDocument:
@@ -489,31 +606,47 @@ Resources:
                 - !Sub ssm.${AWS::URLSuffix}
             Action: sts:AssumeRole
       ManagedPolicyArns:
-        - !Sub arn:${AWS::Partition}:iam::aws:policy/AdministratorAccess  # ワークショップ用
+        - !Sub arn:${AWS::Partition}:iam::aws:policy/AdministratorAccess
         - !Sub arn:${AWS::Partition}:iam::aws:policy/AmazonSSMManagedInstanceCore
         - !Sub arn:${AWS::Partition}:iam::aws:policy/CloudWatchAgentServerPolicy
         - !Sub arn:${AWS::Partition}:iam::aws:policy/AmazonQDeveloperAccess
 
-  CodeServerInstanceProfile:
+  VSCodeServerInstanceProfile:
     Type: AWS::IAM::InstanceProfile
     Properties:
       Roles:
-        - !Ref CodeServerInstanceBootstrapRole
+        - !Ref VSCodeServerInstanceBootstrapRole
 
-  SecurityGroup:
-    Type: AWS::EC2::SecurityGroup
+  VSCodeServerInstance:
+    Type: AWS::EC2::Instance
     Properties:
-      GroupDescription: Security Group for code-server - CloudFront ingress and outbound access
-      SecurityGroupIngress:
-        - Description: Allow HTTP from com.amazonaws.global.cloudfront.origin-facing
-          IpProtocol: tcp
-          FromPort: 80
-          ToPort: 80
-          SourcePrefixListId:
-            !FindInMap [AWSRegionsPrefixListID, !Ref 'AWS::Region', PrefixList]
+      ImageId: !If
+        - IsGraviton
+        - !FindInMap [ArmImage, !Ref InstanceOperatingSystem, ImageId]
+        - !FindInMap [AmdImage, !Ref InstanceOperatingSystem, ImageId]
+      InstanceType: !Ref InstanceType
+      BlockDeviceMappings:
+        - DeviceName: /dev/sda1
+          Ebs:
+            VolumeSize: !Ref InstanceVolumeSize
+            VolumeType: gp3
+            DeleteOnTermination: true
+            Encrypted: true
+      Monitoring: true
+      SecurityGroupIds:
+        - !Ref SecurityGroup
+      IamInstanceProfile: !Ref VSCodeServerInstanceProfile
+      UserData:
+        Fn::Base64: !Sub |
+          #cloud-config
+          hostname: ${InstanceName}
+          runcmd:
+            - mkdir -p ${HomeFolder} && chown -R ${VSCodeServerUser}:${VSCodeServerUser} ${HomeFolder}
+      Tags:
+        - Key: Name
+          Value: !Ref InstanceName
 
-  # CloudFront（先に作成してドメイン名を取得）
-  CodeServerInstanceCachePolicy:
+  VSCodeServerInstanceCachePolicy:
     Type: AWS::CloudFront::CachePolicy
     Properties:
       CachePolicyConfig:
@@ -550,6 +683,21 @@ Resources:
       DistributionConfig:
         Enabled: True
         HttpVersion: http2and3
+        CacheBehaviors:
+          - AllowedMethods:
+              - GET
+              - HEAD
+              - OPTIONS
+              - PUT
+              - PATCH
+              - POST
+              - DELETE
+            CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad
+            Compress: False
+            OriginRequestPolicyId: 216adef6-5c7f-47e4-b989-5492eafa07d3
+            TargetOriginId: !Sub CloudFront-${AWS::StackName}
+            ViewerProtocolPolicy: allow-all
+            PathPattern: '/proxy/*'
         DefaultCacheBehavior:
           AllowedMethods:
             - GET
@@ -559,631 +707,32 @@ Resources:
             - PATCH
             - POST
             - DELETE
-          CachePolicyId: !Ref CodeServerInstanceCachePolicy
+          CachePolicyId: !Ref VSCodeServerInstanceCachePolicy
           OriginRequestPolicyId: 216adef6-5c7f-47e4-b989-5492eafa07d3
           TargetOriginId: !Sub CloudFront-${AWS::StackName}
           ViewerProtocolPolicy: allow-all
         Origins:
-          - DomainName: !GetAtt CodeServerInstance.PublicDnsName
+          - DomainName: !GetAtt VSCodeServerInstance.PublicDnsName
             Id: !Sub CloudFront-${AWS::StackName}
             CustomOriginConfig:
               OriginProtocolPolicy: http-only
 
-  # SSM Document（Cognito情報を自動設定）
-  CodeServerSSMDoc:
-    Type: AWS::SSM::Document
+  SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
     Properties:
-      DocumentType: Command
-      Content:
-        schemaVersion: '2.2'
-        description: Bootstrap VS Code Server with Auto-Generated Cognito Auth
-        parameters:
-          LinuxFlavor:
-            type: String
-            default: 'ubuntu'
-          CodeServerUser:
-            type: String
-          CognitoClientId:
-            type: String
-          CognitoClientSecret:
-            type: String
-          CognitoUserPoolDomain:
-            type: String
-          CloudFrontDomain:
-            type: String
-          DevServerBasePath:
-            type: String
-          DevServerPort:
-            type: String
-          HomeFolder:
-            type: String
-          AssetZipS3Path:
-            type: String
-        mainSteps:
-          # 基本パッケージインストール（Ubuntu用）
-          - name: InstallBasePackages
-            action: aws:runShellScript
-            inputs:
-              timeoutSeconds: 600
-              runCommand:
-                - '#!/bin/bash'
-                - set -e
-                - echo "Updating package lists..."
-                - apt-get -q update
-                - echo "Installing base packages..."
-                - DEBIAN_FRONTEND=noninteractive apt-get install -y -q curl gnupg whois unzip openssl python3-pip nodejs npm snapd
-                - echo "Enabling snapd..."
-                - systemctl enable --now snapd
-                - sleep 10
-                - echo "Creating snap symlink..."
-                - ln -sf /var/lib/snapd/snap /snap
-                - echo "Base packages installation completed"
-          
-          # ユーザー作成（Ubuntu用）
-          - name: AddUser
-            action: aws:runShellScript
-            inputs:
-              timeoutSeconds: 300
-              runCommand:
-                - '#!/bin/bash'
-                - set -e
-                - echo "Setting up user {{ CodeServerUser }}..."
-                - |
-                  if [[ "{{ CodeServerUser }}" != "ubuntu" ]]; then
-                    adduser --disabled-password --gecos '' {{ CodeServerUser }}
-                    usermod -aG sudo {{ CodeServerUser }}
-                    echo "{{ CodeServerUser }} ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/91-vscode-user
-                  fi
-                  mkdir -p /home/{{ CodeServerUser }}
-                  chown -R {{ CodeServerUser }}:{{ CodeServerUser }} /home/{{ CodeServerUser }}
-                  echo "User setup completed"
-          
-          # VS Code Server インストール
-          - name: InstallVSCodeServer
-            action: aws:runShellScript
-            inputs:
-              timeoutSeconds: 600
-              runCommand:
-                - '#!/bin/bash'
-                - set -e
-                - echo "Installing VS Code Server via snap..."
-                - snap install --classic code
-                - echo "Verifying VS Code Server installation..."
-                - /snap/bin/code --version
-                - echo "VS Code Server installation completed"
-          
-          # 簡単な認証プロキシサービス作成
-          - name: CreateSimpleAuthProxy
-            action: aws:runShellScript
-            inputs:
-              timeoutSeconds: 300
-              runCommand:
-                - '#!/bin/bash'
-                - set -e
-                - echo "Creating simple auth proxy server..."
-                - |
-                  cat > /home/{{ CodeServerUser }}/simple-server.js << 'EOF'
-                  const http = require('http');
-                  const https = require('https');
-                  const url = require('url');
-                  const querystring = require('querystring');
-                  const crypto = require('crypto');
-                  const { spawn } = require('child_process');
-                  
-                  const CLIENT_ID = process.env.COGNITO_CLIENT_ID;
-                  const CLIENT_SECRET = process.env.COGNITO_CLIENT_SECRET;
-                  const USER_POOL_DOMAIN = process.env.COGNITO_USER_POOL_DOMAIN;
-                  const CLOUDFRONT_DOMAIN = process.env.CLOUDFRONT_DOMAIN;
-                  
-                  console.log('Server starting with config:');
-                  console.log('CLIENT_ID:', CLIENT_ID ? 'SET' : 'NOT SET');
-                  console.log('USER_POOL_DOMAIN:', USER_POOL_DOMAIN || 'NOT SET');
-                  console.log('CLOUDFRONT_DOMAIN:', CLOUDFRONT_DOMAIN || 'NOT SET');
-                  console.log('CLIENT_SECRET:', CLIENT_SECRET ? 'SET' : 'NOT SET');
-                  
-                  if (!CLIENT_ID || !CLIENT_SECRET || !USER_POOL_DOMAIN || !CLOUDFRONT_DOMAIN) {
-                    console.error('Missing required environment variables');
-                    process.exit(1);
-                  }
-                  
-                  // 簡単なセッション管理
-                  const sessions = new Map();
-                  
-                  function generateSessionId() {
-                    return crypto.randomBytes(16).toString('hex');
-                  }
-                  
-                  function isValidSession(sessionId) {
-                    const session = sessions.get(sessionId);
-                    if (!session) return false;
-                    if (Date.now() - session.created > 3600000) {
-                      sessions.delete(sessionId);
-                      return false;
-                    }
-                    return true;
-                  }
-                  
-                  function checkAuth(req) {
-                    const cookies = req.headers.cookie || '';
-                    const sessionMatch = cookies.match(/workshop_session=([^;]+)/);
-                    return sessionMatch && isValidSession(sessionMatch[1]);
-                  }
-                  
-                  // VS Code Serverを/workshopフォルダで起動
-                  console.log('Starting VS Code Server with /workshop folder...');
-                  const vscode = spawn('/snap/bin/code', [
-                    'serve-web',
-                    '--without-connection-token',
-                    '--accept-server-license-terms',
-                    '--host', '127.0.0.1',
-                    '--port', '8080',
-                    '/workshop'  // ワークスペースフォルダを指定
-                  ], {
-                    stdio: ['ignore', 'pipe', 'pipe'],
-                    env: { ...process.env, HOME: '/home/{{ CodeServerUser }}' },
-                    cwd: '/workshop'  // 作業ディレクトリを/workshopに設定
-                  });
-                  
-                  vscode.stdout.on('data', (data) => {
-                    console.log('VS Code:', data.toString().trim());
-                  });
-                  
-                  vscode.stderr.on('data', (data) => {
-                    console.error('VS Code Error:', data.toString().trim());
-                  });
-                  
-                  vscode.on('close', (code) => {
-                    console.log('VS Code Server exited with code:', code);
-                  });
-                  
-                  const server = http.createServer((req, res) => {
-                    const parsedUrl = url.parse(req.url, true);
-                    
-                    // OAuth コールバック
-                    if (parsedUrl.pathname === '/oauth/callback') {
-                      const code = parsedUrl.query.code;
-                      const error = parsedUrl.query.error;
-                      
-                      console.log('OAuth callback:', { code: !!code, error });
-                      
-                      if (error) {
-                        console.error('OAuth error:', error);
-                        res.writeHead(400, { 'Content-Type': 'text/html' });
-                        res.end('<h1>OAuth Error</h1><p>' + error + '</p>');
-                        return;
-                      }
-                      
-                      if (!code) {
-                        console.error('Missing authorization code');
-                        res.writeHead(400, { 'Content-Type': 'text/html' });
-                        res.end('<h1>Missing Authorization Code</h1>');
-                        return;
-                      }
-                      
-                      const tokenData = querystring.stringify({
-                        grant_type: 'authorization_code',
-                        client_id: CLIENT_ID,
-                        client_secret: CLIENT_SECRET,
-                        code: code,
-                        redirect_uri: 'https://' + CLOUDFRONT_DOMAIN + '/oauth/callback'
-                      });
-                      
-                      const options = {
-                        hostname: USER_POOL_DOMAIN,
-                        port: 443,
-                        path: '/oauth2/token',
-                        method: 'POST',
-                        headers: {
-                          'Content-Type': 'application/x-www-form-urlencoded',
-                          'Content-Length': Buffer.byteLength(tokenData)
-                        }
-                      };
-                      
-                      const tokenReq = https.request(options, (tokenRes) => {
-                        console.log('Token response status:', tokenRes.statusCode);
-                        let data = '';
-                        tokenRes.on('data', (chunk) => data += chunk);
-                        tokenRes.on('end', () => {
-                          console.log('Token response:', data);
-                          try {
-                            const tokens = JSON.parse(data);
-                            if (tokens.access_token) {
-                              const sessionId = generateSessionId();
-                              sessions.set(sessionId, {
-                                created: Date.now(),
-                                token: tokens.access_token
-                              });
-                              
-                              console.log('Session created:', sessionId);
-                              
-                              res.writeHead(302, {
-                                'Set-Cookie': 'workshop_session=' + sessionId + '; HttpOnly; Path=/; Max-Age=3600',
-                                'Location': '/'
-                              });
-                              res.end();
-                            } else {
-                              console.error('No access token in response');
-                              res.writeHead(400, { 'Content-Type': 'text/html' });
-                              res.end('<h1>Failed to get access token</h1><pre>' + data + '</pre>');
-                            }
-                          } catch (e) {
-                            console.error('Token parsing error:', e);
-                            res.writeHead(500, { 'Content-Type': 'text/html' });
-                            res.end('<h1>Token exchange failed</h1><p>' + e.message + '</p>');
-                          }
-                        });
-                      });
-                      
-                      tokenReq.on('error', (e) => {
-                        console.error('Token request error:', e);
-                        res.writeHead(500, { 'Content-Type': 'text/html' });
-                        res.end('<h1>Token exchange error</h1><p>' + e.message + '</p>');
-                      });
-                      
-                      tokenReq.setTimeout(10000, () => {
-                        console.error('Token request timeout');
-                        tokenReq.destroy();
-                        res.writeHead(504, { 'Content-Type': 'text/html' });
-                        res.end('<h1>Token request timeout</h1>');
-                      });
-                      
-                      tokenReq.write(tokenData);
-                      tokenReq.end();
-                      return;
-                    }
-                    
-                    // ログインページ
-                    if (parsedUrl.pathname === '/login') {
-                      const loginUrl = 'https://' + USER_POOL_DOMAIN + '/oauth2/authorize?client_id=' + CLIENT_ID + '&response_type=code&scope=openid+email+profile&redirect_uri=https://' + CLOUDFRONT_DOMAIN + '/oauth/callback';
-                      res.writeHead(302, { 'Location': loginUrl });
-                      res.end();
-                      return;
-                    }
-                    
-                    // Health check
-                    if (parsedUrl.pathname === '/healthz') {
-                      res.writeHead(200, { 'Content-Type': 'application/json' });
-                      res.end(JSON.stringify({
-                        status: 'alive',
-                        timestamp: new Date().toISOString(),
-                        sessions: sessions.size,
-                        workspace: '/workshop',
-                        vscode_running: true
-                      }));
-                      return;
-                    }
-                    
-                    // 認証チェック
-                    if (!checkAuth(req)) {
-                      console.log('Authentication required, redirecting to login');
-                      const loginUrl = 'https://' + USER_POOL_DOMAIN + '/oauth2/authorize?client_id=' + CLIENT_ID + '&response_type=code&scope=openid+email+profile&redirect_uri=https://' + CLOUDFRONT_DOMAIN + '/oauth/callback';
-                      res.writeHead(302, { 'Location': loginUrl });
-                      res.end();
-                      return;
-                    }
-                    
-                    console.log('Authenticated request, proxying to VS Code Server');
-                    
-                    // VS Code Serverへプロキシ
-                    const proxyReq = http.request({
-                      hostname: '127.0.0.1',
-                      port: 8080,
-                      path: req.url,
-                      method: req.method,
-                      headers: req.headers
-                    }, (proxyRes) => {
-                      res.writeHead(proxyRes.statusCode, proxyRes.headers);
-                      proxyRes.pipe(res);
-                    });
-                    
-                    proxyReq.on('error', (e) => {
-                      console.error('Proxy error:', e);
-                      res.writeHead(502, { 'Content-Type': 'text/html' });
-                      res.end('<h1>VS Code Server Unavailable</h1><p>' + e.message + '</p>');
-                    });
-                    
-                    req.pipe(proxyReq);
-                  });
-                  
-                  server.listen(80, '0.0.0.0', () => {
-                    console.log('Simple server listening on port 80');
-                  });
-                  EOF
-                  
-                  chown {{ CodeServerUser }}:{{ CodeServerUser }} /home/{{ CodeServerUser }}/simple-server.js
-          
-          # シンプルサーバーの準備
-          - name: PrepareSimpleServer
-            action: aws:runShellScript
-            inputs:
-              timeoutSeconds: 300
-              runCommand:
-                - '#!/bin/bash'
-                - echo "Preparing simple server..."
-          
-          # サービス作成と起動
-          - name: CreateServices
-            action: aws:runShellScript
-            inputs:
-              timeoutSeconds: 300
-              runCommand:
-                - '#!/bin/bash'
-                - set -e
-                - echo "Creating systemd services..."
-                - |
-                  # シンプルサーバーサービス
-                  cat > /etc/systemd/system/simple-server.service << 'EOF'
-                  [Unit]
-                  Description=Simple VS Code Server with Auth
-                  After=network.target snapd.service
-                  Wants=snapd.service
-                  
-                  [Service]
-                  Type=simple
-                  User=root
-                  Group=root
-                  Environment="HOME=/home/{{ CodeServerUser }}"
-                  Environment="COGNITO_CLIENT_ID={{ CognitoClientId }}"
-                  Environment="COGNITO_CLIENT_SECRET={{ CognitoClientSecret }}"
-                  Environment="COGNITO_USER_POOL_DOMAIN={{ CognitoUserPoolDomain }}"
-                  Environment="CLOUDFRONT_DOMAIN={{ CloudFrontDomain }}"
-                  Environment="PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/snap/bin"
-                  WorkingDirectory=/home/{{ CodeServerUser }}
-                  ExecStart=/usr/bin/node simple-server.js
-                  Restart=always
-                  RestartSec=5
-                  StartLimitInterval=60
-                  StartLimitBurst=3
-                  StandardOutput=journal
-                  StandardError=journal
-                  TimeoutStartSec=30
-                  TimeoutStopSec=10
-                  
-                  [Install]
-                  WantedBy=multi-user.target
-                  EOF
-                  
-                  echo "Reloading systemd and starting services..."
-                  systemctl daemon-reload
-                  systemctl enable simple-server
-                  systemctl start simple-server
-                  echo "Service setup completed"
-                  
-                  # サービス状態を確認し、必要に応じて再起動
-                  sleep 10
-                  if ! systemctl is-active --quiet simple-server; then
-                    echo "Service not active, attempting restart..."
-                    systemctl restart simple-server
-                    sleep 5
-                  fi
-                  
-                  systemctl status simple-server --no-pager
-                  
-                  # Health checkでサービスの動作を確認
-                  echo "Testing service health..."
-                  for i in {1..5}; do
-                    if curl -s http://localhost/healthz | grep -q '"status":"alive"'; then
-                      echo "Service is healthy"
-                      break
-                    else
-                      echo "Attempt $i: Service not ready, waiting..."
-                      sleep 2
-                    fi
-                  done
-                  
-                  echo "Final service status check completed"
-          
-          # アセットダウンロード
-          - name: DownloadAssets
-            action: aws:runShellScript
-            inputs:
-              timeoutSeconds: 600
-              runCommand:
-                - '#!/bin/bash'
-                - |
-                  echo "Setting up workshop directory: {{ HomeFolder }}"
-                  
-                  # ワークショップディレクトリを作成
-                  mkdir -p {{ HomeFolder }}
-                  chown -R {{ CodeServerUser }}:{{ CodeServerUser }} {{ HomeFolder }}
-                  chmod 755 {{ HomeFolder }}
-                  
-                  if [[ -n "{{ AssetZipS3Path }}" ]]; then
-                    echo "Downloading workshop assets..."
-                    curl -L {{ AssetZipS3Path }} -o /tmp/asset.zip
-                    
-                    if [[ -f /tmp/asset.zip ]]; then
-                      echo "Extracting assets to {{ HomeFolder }}..."
-                      unzip -o /tmp/asset.zip -d {{ HomeFolder }}
-                      chown -R {{ CodeServerUser }}:{{ CodeServerUser }} {{ HomeFolder }}
-                      
-                      # Gitリポジトリの初期化
-                      if [[ -d {{ HomeFolder }}/.git ]]; then
-                        sudo -u {{ CodeServerUser }} git -C {{ HomeFolder }} add .
-                        sudo -u {{ CodeServerUser }} git -C {{ HomeFolder }} commit -m 'Workshop commit' || true
-                      else
-                        sudo -u {{ CodeServerUser }} git -C {{ HomeFolder }} init
-                        sudo -u {{ CodeServerUser }} git -C {{ HomeFolder }} add .
-                        sudo -u {{ CodeServerUser }} git -C {{ HomeFolder }} commit -m 'Initial commit' || true
-                      fi
-                      
-                      echo "Workshop assets setup completed"
-                    else
-                      echo "Failed to download assets, creating basic structure"
-                      sudo -u {{ CodeServerUser }} touch {{ HomeFolder }}/README.md
-                      echo "# Workshop Environment" > {{ HomeFolder }}/README.md
-                      chown {{ CodeServerUser }}:{{ CodeServerUser }} {{ HomeFolder }}/README.md
-                    fi
-                  else
-                    echo "No assets specified, creating basic workshop structure"
-                    sudo -u {{ CodeServerUser }} touch {{ HomeFolder }}/README.md
-                    echo "# Workshop Environment" > {{ HomeFolder }}/README.md
-                    chown {{ CodeServerUser }}:{{ CodeServerUser }} {{ HomeFolder }}/README.md
-                  fi
-                  
-                  # 最終確認
-                  ls -la {{ HomeFolder }}
-                  echo "Workshop directory setup completed"
-
-  # SSM実行用Lambda
-  SSMDocLambdaRole:
-    Type: AWS::IAM::Role
-    Properties:
-      AssumeRolePolicyDocument:
-        Version: 2012-10-17
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service: !Sub lambda.${AWS::URLSuffix}
-            Action: sts:AssumeRole
-      ManagedPolicyArns:
-        - !Sub arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
-      Policies:
-        - PolicyName: SSMDocOnEC2Policy
-          PolicyDocument:
-            Version: 2012-10-17
-            Statement:
-              - Effect: Allow
-                Action:
-                  - ssm:SendCommand
-                Resource:
-                  - !Sub arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:document/${CodeServerSSMDoc}
-                  - !Sub arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:instance/${CodeServerInstance}
-              - Effect: Allow
-                Action:
-                  - ssm:ListCommandInvocations
-                  - ssm:GetCommandInvocation
-                Resource: '*'
-
-  RunSSMDocLambda:
-    Type: AWS::Lambda::Function
-    Properties:
-      Description: Run SSM document on EC2 instance
-      Handler: index.lambda_handler
-      Runtime: python3.11
-      MemorySize: 128
-      Timeout: 900
-      Role: !GetAtt SSMDocLambdaRole.Arn
-      Code:
-        ZipFile: |
-          import boto3
-          import cfnresponse
-          import logging
-          
-          logger = logging.getLogger()
-          logger.setLevel(logging.INFO)
-          
-          def lambda_handler(event, context):
-              if event['RequestType'] != 'Create':
-                  cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData={}, reason='No action to take')
-                  return
-              
-              try:
-                  resource_properties = event['ResourceProperties']
-                  instance_id = resource_properties['InstanceId']
-                  document_name = resource_properties['DocumentName']
-                  
-                  parameters = {}
-                  for key, value in resource_properties.items():
-                      if key not in ['ServiceToken', 'ServiceTimeout', 'InstanceId', 'DocumentName']:
-                          parameters[key] = [value]
-                  
-                  ssm = boto3.client('ssm')
-                  response = ssm.send_command(
-                      InstanceIds=[instance_id],
-                      DocumentName=document_name,
-                      Parameters=parameters
-                  )
-                  
-                  command_id = response['Command']['CommandId']
-                  cfnresponse.send(event, context, cfnresponse.SUCCESS, {'CommandId': command_id}, reason='OK')
-                  
-              except Exception as e:
-                  logger.error(e)
-                  cfnresponse.send(event, context, cfnresponse.FAILED, responseData={}, reason=str(e))
-
-  CodeServerInstance:
-    Type: AWS::EC2::Instance
-    Properties:
-      ImageId: !If
-        - IsGraviton
-        - !FindInMap [ArmImage, !Ref InstanceOperatingSystem, ImageId]
-        - !FindInMap [AmdImage, !Ref InstanceOperatingSystem, ImageId]
-      InstanceType: !Ref InstanceType
-      BlockDeviceMappings:
-        - DeviceName: !If [IsAL2023, /dev/xvda, /dev/sda1]
-          Ebs:
-            VolumeSize: !Ref InstanceVolumeSize
-            VolumeType: gp3
-            DeleteOnTermination: true
-            Encrypted: true
-      SecurityGroupIds:
-        - !Ref SecurityGroup
-      IamInstanceProfile: !Ref CodeServerInstanceProfile
-      Tags:
-        - Key: Name
-          Value: !Ref InstanceName
-
-
-  RunCodeServerSSMDoc:
-    Type: Custom::RunSSMDocLambda
-    DependsOn: 
-      - SetPermanentPassword
-      - GetClientSecret
-      - UpdateCognitoClient
-    Properties:
-      ServiceToken: !GetAtt RunSSMDocLambda.Arn
-      InstanceId: !Ref CodeServerInstance
-      DocumentName: !Ref CodeServerSSMDoc
-      LinuxFlavor: 'ubuntu'
-      CodeServerUser: !Ref CodeServerUser
-      CognitoClientId: !Ref CognitoUserPoolClient
-      CognitoClientSecret: !GetAtt GetClientSecret.ClientSecret
-      CognitoUserPoolDomain: !Sub ${CognitoUserPoolDomain}.auth.${AWS::Region}.amazoncognito.com
-      CloudFrontDomain: !GetAtt CloudFrontDistribution.DomainName
-      DevServerBasePath: !Ref DevServerBasePath
-      DevServerPort: !Ref DevServerPort
-      HomeFolder: !Ref HomeFolder
-      AssetZipS3Path: !Ref AssetZipS3Path
+      GroupDescription: Security Group for vscode-server - only allow CloudFront ingress
+      SecurityGroupIngress:
+        - Description: Allow HTTP from com.amazonaws.global.cloudfront.origin-facing
+          IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          SourcePrefixListId:
+            !FindInMap [AWSRegionsPrefixListID, !Ref 'AWS::Region', PrefixList]
 
 Outputs:
-  # 🎯 これだけ見ればOK！
-  WorkshopURL:
-    Description: "🚀 Workshop VS Code Server URL - Click to start!"
+  URL:
+    Description: VSCode-server URL
     Value: !Sub https://${CloudFrontDistribution.DomainName}/?folder=${HomeFolder}
-  
-  LoginCredentials:
-    Description: "🔑 Login with these credentials"
-    Value: !Sub |
-      Email: ${AdminEmail}
-      Password: ${AdminPassword}
-  
-  CognitoLoginURL:
-    Description: "🔐 Direct Cognito Login URL"
-    Value: !Sub https://${CognitoUserPoolDomain}.auth.${AWS::Region}.amazoncognito.com/oauth2/authorize?client_id=${CognitoUserPoolClient}&response_type=code&scope=openid+email+profile&redirect_uri=https://${CloudFrontDistribution.DomainName}/oauth/callback
-  
-  # 詳細情報
-  CognitoDetails:
-    Description: "📋 Auto-created Cognito details"
-    Value: !Sub |
-      User Pool ID: ${CognitoUserPool}
-      User Pool Domain: ${CognitoUserPoolDomain}.auth.${AWS::Region}.amazoncognito.com
-      App Client ID: ${CognitoUserPoolClient}
-      Admin User: ${AdminEmail}
-  
-  QuickStart:
-    Description: "⚡ Quick Start Guide"
-    Value: !Sub |
-      1. Wait for stack creation to complete (5-10 minutes)
-      2. Click the WorkshopURL above
-      3. Login with: ${AdminEmail} / ${AdminPassword}
-      4. Start coding in VS Code Server!
-  
-  Configuration:
-    Description: "⚙️ Configuration Summary"
-    Value: !Sub |
-      Authentication: Auto-generated Cognito User Pool
-      Session Duration: 1 hour
-      Security: Workshop-optimized
-      CloudFront Domain: ${CloudFrontDistribution.DomainName}
-      Instance Type: ${InstanceType}
+  Password:
+    Description: VSCode-server Password
+    Value: !GetAtt SecretPlaintext.password
