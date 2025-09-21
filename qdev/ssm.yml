@@ -184,46 +184,6 @@ Resources:
                         proxy_set_header Connection upgrade;
                         proxy_set_header Accept-Encoding gzip;
                       }
-                      location /proxy/13000/ {
-                        proxy_pass http://localhost:13000/;
-                        proxy_set_header Host \$host;
-                        proxy_set_header Upgrade \$http_upgrade;
-                        proxy_set_header Connection upgrade;
-                        proxy_set_header Accept-Encoding gzip;
-                        proxy_set_header Origin https://\$host;
-                        proxy_set_header X-Forwarded-For \$remote_addr;
-                        proxy_http_version 1.1;
-                      }
-                      location /proxy/3000/ {
-                        proxy_pass http://localhost:3000/;
-                        proxy_set_header Host \$host;
-                        proxy_set_header Upgrade \$http_upgrade;
-                        proxy_set_header Connection upgrade;
-                        proxy_set_header Accept-Encoding gzip;
-                        proxy_set_header Origin https://\$host;
-                        proxy_set_header X-Forwarded-For \$remote_addr;
-                        proxy_http_version 1.1;
-                      }
-                      location /proxy/23000/ {
-                        proxy_pass http://localhost:23000/;
-                        proxy_set_header Host \$host;
-                        proxy_set_header Upgrade \$http_upgrade;
-                        proxy_set_header Connection upgrade;
-                        proxy_set_header Accept-Encoding gzip;
-                        proxy_set_header Origin https://\$host;
-                        proxy_set_header X-Forwarded-For \$remote_addr;
-                        proxy_http_version 1.1;
-                      }
-                      location /proxy/8000/ {
-                        proxy_pass http://localhost:8000/;
-                        proxy_set_header Host \$host;
-                        proxy_set_header Upgrade \$http_upgrade;
-                        proxy_set_header Connection upgrade;
-                        proxy_set_header Accept-Encoding gzip;
-                        proxy_set_header Origin https://\$host;
-                        proxy_set_header X-Forwarded-For \$remote_addr;
-                        proxy_http_version 1.1;
-                      }
                   }
                   EOF
                 - !Sub mkdir -p /home/${CodeServerUser}/.config/code-server
@@ -301,6 +261,31 @@ Resources:
                 - echo "Node and npm installed. Checking configuration"
                 - node -v
                 - npm -v
+          - name: InstallAmazonQCLI
+            action: aws:runShellScript
+            inputs:
+              timeoutSeconds: 300
+              runCommand:
+                - '#!/bin/bash'
+                # Amazon Q CLI インストール
+                - curl --proto '=https' --tlsv1.2 -sSf "https://desktop-release.q.us-east-1.amazonaws.com/latest/q-x86_64-linux.zip" -o /tmp/q.zip
+                - !Sub chown -R ${CodeServerUser}:${CodeServerUser} /tmp/q.zip
+                - unzip -q -d /tmp /tmp/q.zip
+                - !Sub chown -R ${CodeServerUser}:${CodeServerUser} /tmp/q
+                - chmod +x /tmp/q/install.sh
+                - !Sub sudo -u ${CodeServerUser} /tmp/q/install.sh --no-confirm
+                - rm -rf /tmp/q
+                # リソース制限設定（クラッシュ防止）
+                - !Sub |
+                  mkdir -p /home/${CodeServerUser}/.config/amazon-q
+                  cat > /home/${CodeServerUser}/.config/amazon-q/config.json << EOF
+                  {
+                    "maxMemoryMB": 512,
+                    "logLevel": "error"
+                  }
+                  EOF
+                  chown -R ${CodeServerUser}:${CodeServerUser} /home/${CodeServerUser}/.config/amazon-q
+                - echo "Amazon Q CLI installed with resource limits"
           - name: Installuv
             action: aws:runShellScript
             inputs:

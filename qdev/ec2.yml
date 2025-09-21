@@ -1,12 +1,11 @@
-AWSTemplateFormatVersion: '2010-09-09'
-Description: EC2 instance for code-server with Bedrock and Bedrock AgentCore permissions
+Description: EC2 instance for code-server
 
 Parameters:
   InstanceName:
     Type: String
     Description: Code-server EC2 instance name
-    Default: CodeServerInstance
-  VolumeSize:
+    Default: CodeServer
+  InstanceVolumeSize:
     Type: Number
     Description: Code-server EC2 instance volume size in GB
     Default: 40
@@ -30,8 +29,12 @@ Parameters:
 
 Conditions:
   IsGraviton:
-    !Not [!Equals [!Select [0, !Split ['g', !Select [0, !Split ['.', !Ref InstanceType]]]],
-                   !Select [0, !Split ['.', !Ref InstanceType]],],]
+    !Not [
+      !Equals [
+        !Select [0, !Split ['g', !Select [0, !Split ['.', !Ref InstanceType]]]],
+        !Select [0, !Split ['.', !Ref InstanceType]],
+      ],
+    ]
 
 Mappings:
   ArmImage:
@@ -102,26 +105,6 @@ Resources:
       Roles:
         - !Ref CodeServerInstanceBootstrapRole
 
-  BedrockAgentCorePolicy:
-    Type: AWS::IAM::Policy
-    Properties:
-      PolicyName: BedrockAgentCoreFullAccessPolicy
-      PolicyDocument:
-        Version: '2012-10-17'
-        Statement:
-          - Sid: BedrockAgentCoreFullAccess
-            Effect: Allow
-            Action:
-              - bedrock-agentcore:*
-            Resource: '*'
-          - Sid: BedrockFullAccess
-            Effect: Allow
-            Action:
-              - bedrock:*
-            Resource: '*'
-      Roles:
-        - !Ref CodeServerInstanceBootstrapRole
-
   CodeServerInstanceBootstrapRole:
     Type: AWS::IAM::Role
     Properties:
@@ -174,7 +157,7 @@ Resources:
       BlockDeviceMappings:
         - DeviceName: /dev/sda1
           Ebs:
-            VolumeSize: !Ref VolumeSize
+            VolumeSize: !Ref InstanceVolumeSize
             VolumeType: gp3
             DeleteOnTermination: true
             Encrypted: true
@@ -199,9 +182,3 @@ Outputs:
   CodeServerInstancePublicDnsName:
     Description: EC2 instance public DNS name
     Value: !GetAtt CodeServerInstance.PublicDnsName
-  BedrockPolicyArn:
-    Description: ARN of the Bedrock AgentCore policy
-    Value: !Ref BedrockAgentCorePolicy
-  RoleName:
-    Description: Name of the EC2 instance role
-    Value: !Ref CodeServerInstanceBootstrapRole
