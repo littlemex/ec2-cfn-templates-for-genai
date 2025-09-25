@@ -117,32 +117,20 @@ setup_web_search_mcp() {
     fi
 }
 
-# Amazon Q Developer用MCP設定（install-search-mcp.pyで既に作成済みの場合はスキップ）
+# Amazon Q Developer用MCP設定（ラッパースクリプトを使用）
 setup_amazon_q_mcp() {
-    log_info "Amazon Q Developer用MCP設定を確認中..."
+    log_info "Amazon Q Developer用MCP設定を作成中..."
     
     # .aws/amazonq ディレクトリの作成
     AMAZONQ_DIR="$HOME_DIR/.aws/amazonq"
     mkdir -p "$AMAZONQ_DIR"
     
-    # mcp.json の確認
+    # mcp.json の作成（ラッパースクリプトを使用）
     MCP_CONFIG_FILE="$AMAZONQ_DIR/mcp.json"
     
-    if [ -f "$MCP_CONFIG_FILE" ]; then
-        log_info "Amazon Q Developer用MCP設定ファイルは既に存在します"
-        log_info "install-search-mcp.py で作成済みの設定を使用します"
-        
-        # 設定内容を確認
-        if grep -q "awslabs.aws-documentation-mcp-server" "$MCP_CONFIG_FILE" && grep -q "web-search" "$MCP_CONFIG_FILE"; then
-            log_success "AWS Documentation と Web Search の両方の設定が含まれています"
-        else
-            log_warning "設定ファイルに不足があります。手動で確認してください: $MCP_CONFIG_FILE"
-        fi
-    else
-        log_info "Amazon Q Developer用MCP設定ファイルが存在しません"
-        log_info "基本設定を作成します（Web Search設定は install-search-mcp.py で追加済み）"
-        
-        cat > "$MCP_CONFIG_FILE" << 'EOF'
+    log_info "ラッパースクリプトを使用したMCP設定を作成中..."
+    
+    cat > "$MCP_CONFIG_FILE" << EOF
 {
   "mcpServers": {
     "awslabs.aws-documentation-mcp-server": {
@@ -160,19 +148,35 @@ setup_amazon_q_mcp() {
         "FASTMCP_LOG_LEVEL": "ERROR"
       },
       "transportType": "stdio"
+    },
+    "web-search": {
+      "command": "bash",
+      "args": ["$WORK_DIR/search-mcp.sh"],
+      "transportType": "stdio",
+      "autoApprove": [
+        "full-web-search",
+        "get-web-search-summaries",
+        "get-single-web-page-content"
+      ],
+      "disabled": false,
+      "env": {
+        "MAX_CONTENT_LENGTH": "10000",
+        "BROWSER_HEADLESS": "true",
+        "MAX_BROWSERS": "3",
+        "BROWSER_FALLBACK_THRESHOLD": "3"
+      }
     }
   }
 }
 EOF
-        log_success "基本的なAmazon Q Developer用MCP設定を作成しました"
-    fi
     
     # 権限設定
     chown -R "$CODE_SERVER_USER:$CODE_SERVER_USER" "$HOME_DIR/.aws" 2>/dev/null || {
         log_warning "権限設定に失敗しました。手動で実行してください: sudo chown -R $CODE_SERVER_USER:$CODE_SERVER_USER $HOME_DIR/.aws"
     }
     
-    log_success "Amazon Q Developer用MCP設定確認完了: $MCP_CONFIG_FILE"
+    log_success "Amazon Q Developer用MCP設定を作成しました: $MCP_CONFIG_FILE"
+    log_info "Web Search MCPはラッパースクリプト経由で動作します: $WORK_DIR/search-mcp.sh"
 }
 
 # uvxの確認とインストール
