@@ -278,7 +278,7 @@ Resources:
                 
                 # 必要な依存関係をインストール
                 - apt-get update -qq
-                - DEBIAN_FRONTEND=noninteractive apt-get install -y -q wget unzip curl ca-certificates
+                - DEBIAN_FRONTEND=noninteractive apt-get install -y -q wget ca-certificates
                 
                 # Amazon Q CLI がすでにインストールされているかチェック
                 - |
@@ -292,34 +292,30 @@ Resources:
                 - TEMP_DIR=$(mktemp -d)
                 - cd "$TEMP_DIR"
                 
-                # Amazon Q CLI のダウンロード
-                - echo "Amazon Q Developer CLI をダウンロード中..."
+                # Amazon Q CLI .deb パッケージのダウンロード
+                - echo "Amazon Q Developer CLI .deb パッケージをダウンロード中..."
                 - |
-                  if ! curl --proto '=https' --tlsv1.2 -sSf "https://desktop-release.q.us-east-1.amazonaws.com/latest/q-x86_64-linux.zip" -o q.zip; then
-                    echo "ダウンロードに失敗しました"
+                  if ! wget -q https://desktop-release.q.us-east-1.amazonaws.com/latest/amazon-q.deb; then
+                    echo ".deb パッケージのダウンロードに失敗しました"
                     rm -rf "$TEMP_DIR"
                     exit 1
                   fi
                 
-                # ファイルの展開
-                - echo "ファイルを展開中..."
-                - |
-                  if ! unzip -q q.zip; then
-                    echo "ファイルの展開に失敗しました"
-                    rm -rf "$TEMP_DIR"
-                    exit 1
-                  fi
+                # 依存関係の修正（必要に応じて）
+                - echo "依存関係を確認中..."
+                - apt-get install -f -y
                 
-                # インストールスクリプトの実行権限付与
-                - chmod +x q/install.sh
-                
-                # ユーザーとしてインストール実行
+                # .deb パッケージのインストール
                 - echo "Amazon Q Developer CLI をインストール中..."
-                - !Sub |
-                  if ! sudo -u ${CodeServerUser} ./q/install.sh --no-confirm; then
-                    echo "インストールに失敗しました"
-                    rm -rf "$TEMP_DIR"
-                    exit 1
+                - |
+                  if ! dpkg -i amazon-q.deb; then
+                    echo "dpkg でのインストールに失敗しました。依存関係を修正してリトライします..."
+                    apt-get install -f -y
+                    if ! dpkg -i amazon-q.deb; then
+                      echo "Amazon Q Developer CLI のインストールに失敗しました"
+                      rm -rf "$TEMP_DIR"
+                      exit 1
+                    fi
                   fi
                 
                 # クリーンアップ
@@ -328,10 +324,10 @@ Resources:
                 
                 # インストール確認
                 - echo "インストールを確認中..."
-                - !Sub |
-                  if sudo -u ${CodeServerUser} command -v q &> /dev/null; then
+                - |
+                  if command -v q &> /dev/null; then
                     echo "Amazon Q Developer CLI のインストールが完了しました"
-                    sudo -u ${CodeServerUser} q --version || echo "バージョン確認に失敗しましたが、インストールは成功しました"
+                    q --version || echo "バージョン確認に失敗しましたが、インストールは成功しました"
                   else
                     echo "Amazon Q Developer CLI のインストールに失敗しました"
                     exit 1
@@ -349,12 +345,6 @@ Resources:
                   }
                   EOF
                   chown -R ${CodeServerUser}:${CodeServerUser} /home/${CodeServerUser}/.config/amazon-q
-                
-                # PATH の設定確認
-                - !Sub |
-                  if ! grep -q '/home/${CodeServerUser}/.local/bin' /home/${CodeServerUser}/.bashrc; then
-                    echo 'export PATH="$HOME/.local/bin:$PATH"' >> /home/${CodeServerUser}/.bashrc
-                  fi
                 
                 - echo "Amazon Q Developer CLI のインストールと設定が完了しました"
           - name: Installuv
