@@ -104,7 +104,7 @@ q chat --no-interactive "日本語で今日の東京の天気を教えてくだ�
 [README-search-mcp.md](./README-search-mcp.md) を確認してください。実際には以下のコマンドを実行するだけです。
 
 ```bash
-cd /work/ec2-cfn-templates-for-genai/coding-agents/scripts && bash setup.sh
+cd /work/coding-agents/scripts && bash setup.sh
 ```
 
 もう一度今日の天気を聞いてみましょう。今度は少しコマンドが先ほどとは変わっているので注意してくださいね。
