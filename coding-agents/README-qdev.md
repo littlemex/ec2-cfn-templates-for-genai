@@ -30,13 +30,21 @@ bash cfn_manager.sh create
 
 ### Step 2: VS Code Server の接続情報取得
 
-`create` を実行後に作成が完了するまでおよそ 10 分程度かかります。`monitor` を実行することで実行ステータスが確認でき、完了すると Code Server への接続情報が表示されます。
+`create` を実行後に作成が完了するまでおよそ 10 分程度かかります。以下のコマンドを実行することで実行ステータスが確認でき、完了すると Code Server への接続情報が表示されます。
+
+**注意: 以下のコマンドを実行しないと実際の作業環境の URL 情報を取得できません。必ず飛ばさずに以下のコマンドを実行してください。**
 
 ```bash
 bash cfn_manager.sh monitor -n vscode-server-cloudshell-user -r us-east-1
 ```
 
+上記コマンドを実行すると、10 分程度作成に時間がかかります。その後、以下の出力例のような情報が出力されます。
+
+1. 🌐 Code Server URL、に作業環境の URL が表示されるのでコピーして、ブラウザで新しいタブを開いて、コピーした URL を貼り付けてください。するとパスワード画面が出てきます。
+2. 🔑 接続パスワード、に記載されているパスワードを入力してください。すると Code Server という作業環境にログインできます。
+
 **出力例:**
+
 ```
 [SUCCESS] 🎯 Code Server準備完了!
 [VSCODE] 🌐 Code Server URL:
