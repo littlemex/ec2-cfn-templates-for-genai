@@ -87,12 +87,12 @@ check_prerequisites() {
 }
 
 # Cline拡張機能のインストール
-install_cline_extension() {
-    log_info "Cline拡張機能をインストール中..."
+install_extension() {
+    log_info "拡張機能をインストール中..."
     
     # 既存の拡張機能確認
     if code-server --list-extensions | grep -q "saoudrizwan.claude-dev"; then
-        log_warning "Cline拡張機能は既にインストールされています。強制再インストールします..."
+        log_warning "拡張機能は既にインストールされています。強制再インストールします..."
     fi
     
     # 拡張機能のインストール
@@ -100,6 +100,11 @@ install_cline_extension() {
         log_success "Cline拡張機能のインストール完了"
     else
         error_exit "Cline拡張機能のインストールに失敗しました"
+    fi
+        if code-server --install-extension amazonwebservices.amazon-q-vscode --force; then
+        log_success "Amazon Q Developer拡張機能のインストール完了"
+    else
+        error_exit "Amazon Q Developer拡張機能のインストールに失敗しました"
     fi
 }
 
@@ -268,8 +273,8 @@ main() {
     # 2. 前提条件確認
     check_prerequisites
     
-    # 3. Cline拡張機能インストール
-    install_cline_extension
+    # 3. 拡張機能インストール
+    install_extension
     
     # 4. Web Search MCP セットアップ
     setup_web_search_mcp
