@@ -9,6 +9,7 @@ set -e
 DEFAULT_REGION="us-east-1"
 DEFAULT_INSTANCE_TYPE="g6e.2xlarge"
 DEFAULT_VOLUME_SIZE="200"
+DEFAULT_OPERATING_SYSTEM="Ubuntu-22"
 TEMPLATE_DIR="."
 MAIN_TEMPLATE="main.yml"
 S3_BUCKET_PREFIX="vscode-cfn-templates"
@@ -53,6 +54,7 @@ load_config() {
             # 設定ファイルから値を読み込み（コマンドライン引数で上書きされていない場合のみ）
             local config_instance_type=$(jq -r '.instance.type // empty' "$CONFIG_FILE" 2>/dev/null)
             local config_volume_size=$(jq -r '.instance.volumeSize // empty' "$CONFIG_FILE" 2>/dev/null)
+            local config_operating_system=$(jq -r '.instance.operatingSystem // empty' "$CONFIG_FILE" 2>/dev/null)
             local config_region=$(jq -r '.aws.defaultRegion // empty' "$CONFIG_FILE" 2>/dev/null)
             local config_user=$(jq -r '.codeServer.user // empty' "$CONFIG_FILE" 2>/dev/null)
             local config_s3_prefix=$(jq -r '.aws.s3BucketPrefix // empty' "$CONFIG_FILE" 2>/dev/null)
@@ -64,6 +66,10 @@ load_config() {
             
             if [[ -n "$config_volume_size" ]]; then
                 VOLUME_SIZE="$config_volume_size"
+            fi
+            
+            if [[ -n "$config_operating_system" && "$OPERATING_SYSTEM" == "$DEFAULT_OPERATING_SYSTEM" ]]; then
+                OPERATING_SYSTEM="$config_operating_system"
             fi
             
             if [[ -n "$config_region" && "$REGION" == "$DEFAULT_REGION" ]]; then
@@ -160,6 +166,7 @@ parse_args() {
     REGION="$DEFAULT_REGION"
     INSTANCE_TYPE="$DEFAULT_INSTANCE_TYPE"
     VOLUME_SIZE="$DEFAULT_VOLUME_SIZE"
+    OPERATING_SYSTEM="$DEFAULT_OPERATING_SYSTEM"
     VSCODE_USER="coder"
     USER_NAME=$(whoami)
     S3_BUCKET=""
@@ -334,6 +341,7 @@ create_stack() {
     log_info "リージョン: $REGION"
     log_info "インスタンスタイプ: $INSTANCE_TYPE"
     log_info "ボリュームサイズ: ${VOLUME_SIZE}GB"
+    log_info "オペレーティングシステム: $OPERATING_SYSTEM"
     log_info "VS Codeユーザー: $VSCODE_USER"
 
     check_templates
@@ -346,6 +354,7 @@ create_stack() {
             "ParameterKey=CodeServerUser,ParameterValue=$VSCODE_USER" \
             "ParameterKey=InstanceType,ParameterValue=$INSTANCE_TYPE" \
             "ParameterKey=InstanceVolumeSize,ParameterValue=$VOLUME_SIZE" \
+            "ParameterKey=InstanceOperatingSystem,ParameterValue=$OPERATING_SYSTEM" \
             "ParameterKey=InstanceName,ParameterValue=$STACK_NAME" \
         --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM CAPABILITY_AUTO_EXPAND \
         --region "$REGION"
