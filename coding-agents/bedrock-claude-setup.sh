@@ -233,9 +233,33 @@ install_claude_code_cli() {
     fi
 }
 
-# Chrome DevTools MCP サーバーセットアップ
+# Chrome/Chromiumのインストール
+install_chrome_browser() {
+    log_info "Chrome/Chromiumのインストール確認中..."
+    
+    if ! command -v google-chrome &> /dev/null && ! command -v chromium-browser &> /dev/null; then
+        log_info "Chrome/Chromiumをインストール中..."
+        
+        # ディスク容量チェック
+        sudo apt-get update
+        sudo apt-get install -y chromium-browser
+        
+        if command -v chromium-browser &> /dev/null; then
+            log_success "Chromiumのインストールが完了しました"
+        else
+            log_warning "Chromiumのインストールに失敗しました"
+        fi
+    else
+        log_success "Chrome/Chromiumが既にインストールされています"
+    fi
+}
+
+# Chrome DevTools MCP サーバーセットアップ（環境変数設定後に実行）
 setup_chrome_devtools_mcp() {
     log_info "Chrome DevTools MCP サーバーをセットアップ中..."
+    
+    # 環境変数を現在のセッションに読み込み
+    source "/home/$USER/.bashrc"
     
     # Chrome DevTools MCP サーバーを追加
     if claude mcp add chrome-devtools npx chrome-devtools-mcp@latest; then
@@ -254,26 +278,19 @@ setup_chrome_devtools_mcp() {
                 fi
             fi
         fi
+        
+        # MCP サーバーリストを表示
+        log_info "設定されたMCPサーバー:"
+        claude mcp list || log_warning "MCPサーバーリストの取得に失敗しました"
+        
     else
         log_warning "Chrome DevTools MCP サーバーの追加に失敗しました"
-        log_info "手動で追加してください: claude mcp add chrome-devtools npx chrome-devtools-mcp@latest"
-    fi
-    
-    # Chrome/Chromiumのインストール確認
-    if ! command -v google-chrome &> /dev/null && ! command -v chromium-browser &> /dev/null; then
-        log_info "Chrome/Chromiumをインストール中..."
-        
-        # ディスク容量チェック
-        sudo apt-get update
-        sudo apt-get install -y chromium-browser
-        
-        if command -v chromium-browser &> /dev/null; then
-            log_success "Chromiumのインストールが完了しました"
-        else
-            log_warning "Chromiumのインストールに失敗しました"
-        fi
-    else
-        log_success "Chrome/Chromiumが既にインストールされています"
+        log_info "環境変数を確認してください:"
+        echo "  CLAUDE_CODE_USE_BEDROCK=$CLAUDE_CODE_USE_BEDROCK"
+        echo "  ANTHROPIC_MODEL=$ANTHROPIC_MODEL"
+        log_info "手動で追加してください:"
+        echo "  source ~/.bashrc"
+        echo "  claude mcp add chrome-devtools npx chrome-devtools-mcp@latest"
     fi
 }
 
@@ -419,8 +436,9 @@ main() {
     check_nodejs
     check_bedrock_availability
     install_claude_code_cli
-    setup_chrome_devtools_mcp
+    install_chrome_browser
     setup_environment_variables
+    setup_chrome_devtools_mcp
     test_bedrock_connection
     show_completion_message
 }
