@@ -220,8 +220,17 @@ check_bedrock_availability() {
 install_claude_code_cli() {
     log_claude "Claude Code CLIをインストール中..."
     
+    # 既にインストールされているかチェック
+    if command -v claude &> /dev/null; then
+        local claude_version=$(claude --version 2>/dev/null || echo "バージョン取得失敗")
+        log_success "Claude Code CLIは既にインストールされています"
+        log_info "Claude Code バージョン: $claude_version"
+        return 0
+    fi
+    
     # グローバルインストール（sudo権限が必要）
-    if npm install -g @anthropic-ai/claude-code; then
+    log_info "管理者権限でClaude Code CLIをインストールします..."
+    if sudo npm install -g @anthropic-ai/claude-code; then
         log_success "Claude Code CLIのインストールが完了しました"
         
         # バージョン確認
@@ -229,6 +238,7 @@ install_claude_code_cli() {
         log_info "Claude Code バージョン: $claude_version"
     else
         log_error "Claude Code CLIのインストールに失敗しました"
+        log_warning "手動でインストールしてください: sudo npm install -g @anthropic-ai/claude-code"
         return 1
     fi
 }
@@ -261,11 +271,24 @@ setup_chrome_devtools_mcp() {
     # 環境変数を現在のセッションに読み込み
     source "/home/$USER/.bashrc"
     
+    # 現在のMCPサーバー状況を確認
+    log_info "MCP追加前の状況確認:"
+    claude mcp list || log_info "MCPサーバーが設定されていません"
+    
     # Chrome DevTools MCP サーバーを追加
+    log_info "Chrome DevTools MCP サーバーを追加中..."
     if claude mcp add chrome-devtools npx chrome-devtools-mcp@latest; then
         log_success "Chrome DevTools MCP サーバーが追加されました"
         
-        # MCP設定確認
+        # 追加後のMCPサーバーリストを表示
+        log_info "MCP追加後の状況確認:"
+        if claude mcp list; then
+            log_success "MCPサーバーリストの取得に成功しました"
+        else
+            log_warning "MCPサーバーリストの取得に失敗しました"
+        fi
+        
+        # MCP設定ファイルの詳細確認
         local mcp_config_file="/home/$USER/.config/claude/mcp_servers.json"
         if [[ -f "$mcp_config_file" ]]; then
             log_info "MCP設定ファイル: $mcp_config_file"
@@ -273,15 +296,15 @@ setup_chrome_devtools_mcp() {
                 local chrome_devtools_config=$(jq '.["chrome-devtools"]' "$mcp_config_file" 2>/dev/null)
                 if [[ "$chrome_devtools_config" != "null" ]]; then
                     log_success "Chrome DevTools MCP設定が確認されました"
+                    log_info "設定内容:"
+                    echo "$chrome_devtools_config" | jq . 2>/dev/null || echo "$chrome_devtools_config"
                 else
                     log_warning "Chrome DevTools MCP設定が見つかりません"
                 fi
             fi
+        else
+            log_warning "MCP設定ファイルが見つかりません: $mcp_config_file"
         fi
-        
-        # MCP サーバーリストを表示
-        log_info "設定されたMCPサーバー:"
-        claude mcp list || log_warning "MCPサーバーリストの取得に失敗しました"
         
     else
         log_warning "Chrome DevTools MCP サーバーの追加に失敗しました"
@@ -291,6 +314,7 @@ setup_chrome_devtools_mcp() {
         log_info "手動で追加してください:"
         echo "  source ~/.bashrc"
         echo "  claude mcp add chrome-devtools npx chrome-devtools-mcp@latest"
+        echo "  claude mcp list"
     fi
 }
 
