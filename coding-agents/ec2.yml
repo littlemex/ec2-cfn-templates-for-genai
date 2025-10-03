@@ -29,11 +29,18 @@ Parameters:
 
 Conditions:
   IsGraviton:
-    !Not [
-      !Equals [
-        !Select [0, !Split ['g', !Select [0, !Split ['.', !Ref InstanceType]]]],
-        !Select [0, !Split ['.', !Ref InstanceType]],
-      ],
+    !Or [
+      !Equals [!Select [0, !Split ['.', !Ref InstanceType]], 'c7g'],
+      !Equals [!Select [0, !Split ['.', !Ref InstanceType]], 'c6g'],
+      !Equals [!Select [0, !Split ['.', !Ref InstanceType]], 'c6gd'],
+      !Equals [!Select [0, !Split ['.', !Ref InstanceType]], 'c6gn'],
+      !Equals [!Select [0, !Split ['.', !Ref InstanceType]], 'm7g'],
+      !Equals [!Select [0, !Split ['.', !Ref InstanceType]], 'm6g'],
+      !Equals [!Select [0, !Split ['.', !Ref InstanceType]], 'm6gd'],
+      !Equals [!Select [0, !Split ['.', !Ref InstanceType]], 'r7g'],
+      !Equals [!Select [0, !Split ['.', !Ref InstanceType]], 'r6g'],
+      !Equals [!Select [0, !Split ['.', !Ref InstanceType]], 'r6gd'],
+      !Equals [!Select [0, !Split ['.', !Ref InstanceType]], 't4g']
     ]
 
 Mappings:
