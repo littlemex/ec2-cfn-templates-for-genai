@@ -114,6 +114,7 @@ show_help() {
     -t, --type TYPE         インスタンスタイプ (デフォルト: $DEFAULT_INSTANCE_TYPE)
     -u, --user USER         VS Code Serverユーザー名 (デフォルト: coder)
     -b, --bucket BUCKET     S3バケット名 (デフォルト: $S3_BUCKET_PREFIX-ACCOUNT_ID-REGION)
+    -c, --config CONFIG     設定ファイルパス (デフォルト: config.json)
     -h, --help              このヘルプを表示
 
 インスタンスタイプ:
@@ -187,6 +188,10 @@ parse_args() {
                 ;;
             -b|--bucket)
                 S3_BUCKET="$2"
+                shift 2
+                ;;
+            -c|--config)
+                CONFIG_FILE="$2"
                 shift 2
                 ;;
             -h|--help)
