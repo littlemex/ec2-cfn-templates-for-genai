@@ -1,55 +1,60 @@
+AWSTemplateFormatVersion: '2010-09-09'
 Description: EC2 instance for code-server
 
 Parameters:
   InstanceName:
     Type: String
     Description: Code-server EC2 instance name
-    Default: CodeServer
-  InstanceVolumeSize:
+    Default: CodeServerInstance
+  
+  VolumeSize:
     Type: Number
     Description: Code-server EC2 instance volume size in GB
     Default: 40
+  
   InstanceType:
     Description: Code-server EC2 instance type
     Type: String
     Default: c7i.4xlarge
+  
   InstanceOperatingSystem:
     Description: Code-server EC2 operating system
     Type: String
     Default: Ubuntu-22
-    AllowedValues: ['Ubuntu-22', 'Ubuntu-24', 'Ubuntu-22-DL-GPU']
+    AllowedValues:
+      - Ubuntu-22
+      - Ubuntu-24
+      - Ubuntu-22-DL-GPU
+  
   CodeServerUser:
     Type: String
     Description: UserName for code-server
     Default: coder
+  
   HomeFolder:
     Type: String
     Description: Folder to open in code-server
     Default: /work
 
 Conditions:
-  IsGraviton:
-    !Or [
-      !Equals [!Select [0, !Split ['.', !Ref InstanceType]], 'c6g'],
-      !Equals [!Select [0, !Split ['.', !Ref InstanceType]], 'c7g'],
-      !Equals [!Select [0, !Split ['.', !Ref InstanceType]], 'm6g'],
-      !Equals [!Select [0, !Split ['.', !Ref InstanceType]], 'm7g'],
-      !Equals [!Select [0, !Split ['.', !Ref InstanceType]], 'r6g'],
-      !Equals [!Select [0, !Split ['.', !Ref InstanceType]], 'r7g'],
-      !Equals [!Select [0, !Split ['.', !Ref InstanceType]], 't4g']
-    ]
+  IsGraviton: !Or
+    - !Equals [!Select [0, !Split ['.', !Ref InstanceType]], 'c6g']
+    - !Equals [!Select [0, !Split ['.', !Ref InstanceType]], 'c7g']
+    - !Equals [!Select [0, !Split ['.', !Ref InstanceType]], 'm6g']
+    - !Equals [!Select [0, !Split ['.', !Ref InstanceType]], 'm7g']
+    - !Equals [!Select [0, !Split ['.', !Ref InstanceType]], 'r6g']
+    - !Equals [!Select [0, !Split ['.', !Ref InstanceType]], 'r7g']
+    - !Equals [!Select [0, !Split ['.', !Ref InstanceType]], 't4g']
 
 Mappings:
   ArmImage:
-    # aws ssm get-parameters-by-path --path "/aws/service/canonical/ubuntu/" --recursive --query "Parameters[*].Name"  > canonical-ami.txt
-    # aws ssm get-parameters-by-path --path "/aws/service/ami-amazon-linux-latest/" --recursive --query "Parameters[*].Name"  > amazon-ami.txt
-    # aws ssm get-parameters-by-path --path "/aws/service/deeplearning/ami/" --recursive --query "Parameters[*].Name"  > deeplearning-ami.txt
     Ubuntu-22:
       ImageId: '{{resolve:ssm:/aws/service/canonical/ubuntu/server/jammy/stable/current/arm64/hvm/ebs-gp2/ami-id}}'
     Ubuntu-24:
       ImageId: '{{resolve:ssm:/aws/service/canonical/ubuntu/server/noble/stable/current/arm64/hvm/ebs-gp3/ami-id}}'
     Ubuntu-22-DL-GPU:
       ImageId: '{{resolve:ssm:/aws/service/deeplearning/ami/arm64/base-oss-nvidia-driver-gpu-ubuntu-22.04/latest/ami-id}}'
+  
   AmdImage:
     Ubuntu-22:
       ImageId: '{{resolve:ssm:/aws/service/canonical/ubuntu/server/jammy/stable/current/amd64/hvm/ebs-gp2/ami-id}}'
@@ -57,8 +62,8 @@ Mappings:
       ImageId: '{{resolve:ssm:/aws/service/canonical/ubuntu/server/noble/stable/current/amd64/hvm/ebs-gp3/ami-id}}'
     Ubuntu-22-DL-GPU:
       ImageId: '{{resolve:ssm:/aws/service/deeplearning/ami/x86_64/base-oss-nvidia-driver-gpu-ubuntu-22.04/latest/ami-id}}'
+  
   AWSRegionsPrefixListID:
-    # aws ec2 describe-managed-prefix-lists  --region <REGION> | jq -r '.PrefixLists[] | select (.PrefixListName == "com.amazonaws.global.cloudfront.origin-facing") | .PrefixListId'
     ap-northeast-1:
       PrefixList: pl-58a04531
     ap-northeast-2:
@@ -112,7 +117,7 @@ Resources:
             Resource: !Sub 'arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/CDKToolkit/*'
       Roles:
         - !Ref CodeServerInstanceBootstrapRole
-
+  
   CodeServerInstanceBootstrapRole:
     Type: AWS::IAM::Role
     Properties:
@@ -126,7 +131,7 @@ Resources:
                 - !Sub ssm.${AWS::URLSuffix}
             Action: sts:AssumeRole
       ManagedPolicyArns:
-        - !Sub arn:${AWS::Partition}:iam::aws:policy/AdministratorAccess # scope this down later
+        - !Sub arn:${AWS::Partition}:iam::aws:policy/AdministratorAccess
         - !Sub arn:${AWS::Partition}:iam::aws:policy/AmazonSSMManagedInstanceCore
         - !Sub arn:${AWS::Partition}:iam::aws:policy/CloudWatchAgentServerPolicy
         - !Sub arn:${AWS::Partition}:iam::aws:policy/AmazonQDeveloperAccess
@@ -142,13 +147,13 @@ Resources:
                   - bedrock:ListFoundationModels
                   - bedrock:GetFoundationModel
                 Resource: '*'
-
+  
   CodeServerInstanceProfile:
     Type: AWS::IAM::InstanceProfile
     Properties:
       Roles:
         - !Ref CodeServerInstanceBootstrapRole
-
+  
   SecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Metadata:
@@ -163,9 +168,8 @@ Resources:
           IpProtocol: tcp
           FromPort: 80
           ToPort: 80
-          SourcePrefixListId:
-            !FindInMap [AWSRegionsPrefixListID, !Ref 'AWS::Region', PrefixList]
-
+          SourcePrefixListId: !FindInMap [AWSRegionsPrefixListID, !Ref 'AWS::Region', PrefixList]
+  
   CodeServerInstance:
     Type: AWS::EC2::Instance
     Properties:
@@ -177,7 +181,7 @@ Resources:
       BlockDeviceMappings:
         - DeviceName: /dev/sda1
           Ebs:
-            VolumeSize: !Ref InstanceVolumeSize
+            VolumeSize: !Ref VolumeSize
             VolumeType: gp3
             DeleteOnTermination: true
             Encrypted: true
@@ -199,6 +203,7 @@ Outputs:
   CodeServerInstanceId:
     Description: EC2 instance ID
     Value: !Ref CodeServerInstance
+  
   CodeServerInstancePublicDnsName:
     Description: EC2 instance public DNS name
     Value: !GetAtt CodeServerInstance.PublicDnsName
