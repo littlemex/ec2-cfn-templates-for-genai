@@ -7,10 +7,12 @@ set -e
 
 # デフォルト設定
 DEFAULT_REGION="us-east-1"
-DEFAULT_INSTANCE_TYPE="c7i.4xlarge"
+DEFAULT_INSTANCE_TYPE="g6e.2xlarge"
+DEFAULT_VOLUME_SIZE="200"
 TEMPLATE_DIR="."
 MAIN_TEMPLATE="main.yml"
 S3_BUCKET_PREFIX="vscode-cfn-templates"
+CONFIG_FILE="config.json"
 
 # 色付きメッセージ
 RED='\033[0;31m'
@@ -39,6 +41,50 @@ log_error() {
 
 log_vscode() {
     echo -e "${CYAN}[VSCODE]${NC} $1"
+}
+
+# 設定ファイル読み込み
+load_config() {
+    if [[ -f "$CONFIG_FILE" ]]; then
+        log_info "設定ファイルを読み込み中: $CONFIG_FILE"
+        
+        # jqが利用可能かチェック
+        if command -v jq &> /dev/null; then
+            # 設定ファイルから値を読み込み（コマンドライン引数で上書きされていない場合のみ）
+            local config_instance_type=$(jq -r '.instance.type // empty' "$CONFIG_FILE" 2>/dev/null)
+            local config_volume_size=$(jq -r '.instance.volumeSize // empty' "$CONFIG_FILE" 2>/dev/null)
+            local config_region=$(jq -r '.aws.defaultRegion // empty' "$CONFIG_FILE" 2>/dev/null)
+            local config_user=$(jq -r '.codeServer.user // empty' "$CONFIG_FILE" 2>/dev/null)
+            local config_s3_prefix=$(jq -r '.aws.s3BucketPrefix // empty' "$CONFIG_FILE" 2>/dev/null)
+            
+            # デフォルト値を設定ファイルの値で上書き（コマンドライン引数が指定されていない場合）
+            if [[ -n "$config_instance_type" && "$INSTANCE_TYPE" == "$DEFAULT_INSTANCE_TYPE" ]]; then
+                INSTANCE_TYPE="$config_instance_type"
+            fi
+            
+            if [[ -n "$config_volume_size" ]]; then
+                VOLUME_SIZE="$config_volume_size"
+            fi
+            
+            if [[ -n "$config_region" && "$REGION" == "$DEFAULT_REGION" ]]; then
+                REGION="$config_region"
+            fi
+            
+            if [[ -n "$config_user" && "$VSCODE_USER" == "coder" ]]; then
+                VSCODE_USER="$config_user"
+            fi
+            
+            if [[ -n "$config_s3_prefix" ]]; then
+                S3_BUCKET_PREFIX="$config_s3_prefix"
+            fi
+            
+            log_success "設定ファイルを読み込みました"
+        else
+            log_warning "jqがインストールされていません。設定ファイルをスキップします"
+        fi
+    else
+        log_info "設定ファイルが見つかりません: $CONFIG_FILE (デフォルト設定を使用)"
+    fi
 }
 
 # ヘルプ表示
@@ -112,6 +158,7 @@ parse_args() {
     STACK_NAME=""
     REGION="$DEFAULT_REGION"
     INSTANCE_TYPE="$DEFAULT_INSTANCE_TYPE"
+    VOLUME_SIZE="$DEFAULT_VOLUME_SIZE"
     VSCODE_USER="coder"
     USER_NAME=$(whoami)
     S3_BUCKET=""
@@ -281,6 +328,7 @@ create_stack() {
     log_info "スタック名: $STACK_NAME"
     log_info "リージョン: $REGION"
     log_info "インスタンスタイプ: $INSTANCE_TYPE"
+    log_info "ボリュームサイズ: ${VOLUME_SIZE}GB"
     log_info "VS Codeユーザー: $VSCODE_USER"
 
     check_templates
@@ -292,6 +340,7 @@ create_stack() {
         --parameters \
             "ParameterKey=CodeServerUser,ParameterValue=$VSCODE_USER" \
             "ParameterKey=InstanceType,ParameterValue=$INSTANCE_TYPE" \
+            "ParameterKey=InstanceVolumeSize,ParameterValue=$VOLUME_SIZE" \
             "ParameterKey=InstanceName,ParameterValue=$STACK_NAME" \
         --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM CAPABILITY_AUTO_EXPAND \
         --region "$REGION"
@@ -638,6 +687,7 @@ validate_template() {
 # メイン処理
 main() {
     parse_args "$@"
+    load_config
     check_aws_cli
 
     case "$COMMAND" in
