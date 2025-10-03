@@ -17,7 +17,7 @@ Parameters:
     Description: Code-server EC2 operating system
     Type: String
     Default: Ubuntu-22
-    AllowedValues: ['Ubuntu-22', 'Ubuntu-24']
+    AllowedValues: ['Ubuntu-22', 'Ubuntu-24', 'Ubuntu-22-DL-GPU']
   CodeServerUser:
     Type: String
     Description: UserName for code-server
@@ -29,26 +29,34 @@ Parameters:
 
 Conditions:
   IsGraviton:
-    !Not [
-      !Equals [
-        !Select [0, !Split ['g', !Select [0, !Split ['.', !Ref InstanceType]]]],
-        !Select [0, !Split ['.', !Ref InstanceType]],
-      ],
+    !Or [
+      !Equals [!Select [0, !Split ['.', !Ref InstanceType]], 'c6g'],
+      !Equals [!Select [0, !Split ['.', !Ref InstanceType]], 'c7g'],
+      !Equals [!Select [0, !Split ['.', !Ref InstanceType]], 'm6g'],
+      !Equals [!Select [0, !Split ['.', !Ref InstanceType]], 'm7g'],
+      !Equals [!Select [0, !Split ['.', !Ref InstanceType]], 'r6g'],
+      !Equals [!Select [0, !Split ['.', !Ref InstanceType]], 'r7g'],
+      !Equals [!Select [0, !Split ['.', !Ref InstanceType]], 't4g']
     ]
 
 Mappings:
   ArmImage:
     # aws ssm get-parameters-by-path --path "/aws/service/canonical/ubuntu/" --recursive --query "Parameters[*].Name"  > canonical-ami.txt
     # aws ssm get-parameters-by-path --path "/aws/service/ami-amazon-linux-latest/" --recursive --query "Parameters[*].Name"  > amazon-ami.txt
+    # aws ssm get-parameters-by-path --path "/aws/service/deeplearning/ami/" --recursive --query "Parameters[*].Name"  > deeplearning-ami.txt
     Ubuntu-22:
       ImageId: '{{resolve:ssm:/aws/service/canonical/ubuntu/server/jammy/stable/current/arm64/hvm/ebs-gp2/ami-id}}'
     Ubuntu-24:
       ImageId: '{{resolve:ssm:/aws/service/canonical/ubuntu/server/noble/stable/current/arm64/hvm/ebs-gp3/ami-id}}'
+    Ubuntu-22-DL-GPU:
+      ImageId: '{{resolve:ssm:/aws/service/deeplearning/ami/arm64/base-oss-nvidia-driver-gpu-ubuntu-22.04/latest/ami-id}}'
   AmdImage:
     Ubuntu-22:
       ImageId: '{{resolve:ssm:/aws/service/canonical/ubuntu/server/jammy/stable/current/amd64/hvm/ebs-gp2/ami-id}}'
     Ubuntu-24:
       ImageId: '{{resolve:ssm:/aws/service/canonical/ubuntu/server/noble/stable/current/amd64/hvm/ebs-gp3/ami-id}}'
+    Ubuntu-22-DL-GPU:
+      ImageId: '{{resolve:ssm:/aws/service/deeplearning/ami/x86_64/base-oss-nvidia-driver-gpu-ubuntu-22.04/latest/ami-id}}'
   AWSRegionsPrefixListID:
     # aws ec2 describe-managed-prefix-lists  --region <REGION> | jq -r '.PrefixLists[] | select (.PrefixListName == "com.amazonaws.global.cloudfront.origin-facing") | .PrefixListId'
     ap-northeast-1:
@@ -122,6 +130,18 @@ Resources:
         - !Sub arn:${AWS::Partition}:iam::aws:policy/AmazonSSMManagedInstanceCore
         - !Sub arn:${AWS::Partition}:iam::aws:policy/CloudWatchAgentServerPolicy
         - !Sub arn:${AWS::Partition}:iam::aws:policy/AmazonQDeveloperAccess
+      Policies:
+        - PolicyName: BedrockAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - bedrock:InvokeModel
+                  - bedrock:InvokeModelWithResponseStream
+                  - bedrock:ListFoundationModels
+                  - bedrock:GetFoundationModel
+                Resource: '*'
 
   CodeServerInstanceProfile:
     Type: AWS::IAM::InstanceProfile

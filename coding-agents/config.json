@@ -1,0 +1,28 @@
+{
+  "instance": {
+    "type": "g6e.2xlarge",
+    "volumeSize": 200,
+    "operatingSystem": "Ubuntu-22-DL-GPU"
+  },
+  "codeServer": {
+    "user": "coder",
+    "homeFolder": "/work"
+  },
+  "bedrock": {
+    "region": "us-east-1",
+    "modelId": "anthropic.claude-sonnet-4-20250514-v1:0",
+    "enabled": true
+  },
+  "aws": {
+    "defaultRegion": "us-east-1",
+    "s3BucketPrefix": "vscode-cfn-templates"
+  },
+  "mcp": {
+    "chromeDevTools": {
+      "enabled": true,
+      "browserPath": "/usr/bin/chromium-browser",
+      "headless": true,
+      "defaultTimeout": 30000
+    }
+  }
+}
