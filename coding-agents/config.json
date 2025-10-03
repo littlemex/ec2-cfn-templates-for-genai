@@ -2,7 +2,7 @@
   "instance": {
     "type": "g6e.2xlarge",
     "volumeSize": 200,
-    "operatingSystem": "Ubuntu-22"
+    "operatingSystem": "Ubuntu-22-DL-GPU"
   },
   "codeServer": {
     "user": "coder",
@@ -10,7 +10,7 @@
   },
   "bedrock": {
     "region": "us-east-1",
-    "modelId": "anthropic.claude-3-5-sonnet-20241022-v2:0",
+    "modelId": "anthropic.claude-sonnet-4-20250514-v1:0",
     "enabled": true
   },
   "aws": {

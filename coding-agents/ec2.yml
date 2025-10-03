@@ -17,7 +17,7 @@ Parameters:
     Description: Code-server EC2 operating system
     Type: String
     Default: Ubuntu-22
-    AllowedValues: ['Ubuntu-22', 'Ubuntu-24']
+    AllowedValues: ['Ubuntu-22', 'Ubuntu-24', 'Ubuntu-22-DL-GPU']
   CodeServerUser:
     Type: String
     Description: UserName for code-server
@@ -43,15 +43,20 @@ Mappings:
   ArmImage:
     # aws ssm get-parameters-by-path --path "/aws/service/canonical/ubuntu/" --recursive --query "Parameters[*].Name"  > canonical-ami.txt
     # aws ssm get-parameters-by-path --path "/aws/service/ami-amazon-linux-latest/" --recursive --query "Parameters[*].Name"  > amazon-ami.txt
+    # aws ssm get-parameters-by-path --path "/aws/service/deeplearning/ami/" --recursive --query "Parameters[*].Name"  > deeplearning-ami.txt
     Ubuntu-22:
       ImageId: '{{resolve:ssm:/aws/service/canonical/ubuntu/server/jammy/stable/current/arm64/hvm/ebs-gp2/ami-id}}'
     Ubuntu-24:
       ImageId: '{{resolve:ssm:/aws/service/canonical/ubuntu/server/noble/stable/current/arm64/hvm/ebs-gp3/ami-id}}'
+    Ubuntu-22-DL-GPU:
+      ImageId: '{{resolve:ssm:/aws/service/deeplearning/ami/arm64/base-oss-nvidia-driver-gpu-ubuntu-22.04/latest/ami-id}}'
   AmdImage:
     Ubuntu-22:
       ImageId: '{{resolve:ssm:/aws/service/canonical/ubuntu/server/jammy/stable/current/amd64/hvm/ebs-gp2/ami-id}}'
     Ubuntu-24:
       ImageId: '{{resolve:ssm:/aws/service/canonical/ubuntu/server/noble/stable/current/amd64/hvm/ebs-gp3/ami-id}}'
+    Ubuntu-22-DL-GPU:
+      ImageId: '{{resolve:ssm:/aws/service/deeplearning/ami/x86_64/base-oss-nvidia-driver-gpu-ubuntu-22.04/latest/ami-id}}'
   AWSRegionsPrefixListID:
     # aws ec2 describe-managed-prefix-lists  --region <REGION> | jq -r '.PrefixLists[] | select (.PrefixListName == "com.amazonaws.global.cloudfront.origin-facing") | .PrefixListId'
     ap-northeast-1:
