@@ -79,6 +79,6 @@ https://docs.cline.bot/features/cline-rules  このページをフェッチし�
 
 [Cline CLI](https://docs.cline.bot/cline-cli/overview) という CLI で利用できるツールが存在します。現状 aws profile を指定しなければ動かないため、ハンズオンではスキップしますが、興味のある方は `aws configure` を設定して試してみてください。
 
-## 🎉 ハンズオン 1 完遂！
+## 🎉 ハンズオン 1-1 完遂！
 
 おめでとうございます！ハンズオン 1-1 が完了しました！！
