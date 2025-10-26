@@ -74,11 +74,17 @@ Code Server 環境の特徴:
 
 **3-1: ディレクトリ（フォルダと似た概念）に移動して作業環境をデプロイ**
    
-このコマンドで Code Server をデプロイします
+このコマンドで Code Server をデプロイします。
+
+**注意: 一つのアカウントで同じリージョンで複数人がデプロイすると名前衝突でエラーする可能性があるため、-n で Stack 名を変更してください。**
 
 ```bash
-# /work ディレクトリにいるはずです
-cd ec2-cfn-templates-for-genai/workshops/solutions-workshop && bash cfn_manager.sh create && bash cfn_manager.sh monitor -n vscode-server-cloudshell-user -r us-east-1
+# デフォルト
+cd /work/ec2-cfn-templates-for-genai/workshops/solutions-workshop && bash cfn_manager.sh create && bash cfn_manager.sh monitor -n vscode-server-cloudshell-user -r us-east-1
+
+# 同一アカウントで複数名がデプロイする場合、STACKNAME を参加者ごとに変えてください。
+# あまりに参加者が多いとサービスのクォータリミットエラーが出る可能性があります。特にネットワーク周りの作成数でエラーする可能性があるため AWS 管理者にクォータ上限の緩和を依頼する必要があります。
+STACKNAME=test001 && cd /work/ec2-cfn-templates-for-genai/workshops/solutions-workshop && bash cfn_manager.sh create -n $STACKNAME && bash cfn_manager.sh monitor -n $STACKNAME -r us-east-1
 ```
 
 ## Step 4: 作業環境への接続

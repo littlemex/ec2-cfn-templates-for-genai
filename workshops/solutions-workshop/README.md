@@ -29,7 +29,9 @@
 
 **各コーディングエージェントの体験**
 
-Amazon Q Developer は設定に多少時間がかかります。もし AWS Identity Center のトラブルやうまく設定ができない際には 1-1, 1-2 の実施後に先にハンズオン 2 に進むことを推奨します。
+Amazon Q Developer は設定に多少時間がかかります。もし AWS Identity Center のトラブルやうまく設定ができない際には 1-1 もしくは 1-2 の実施後に先にハンズオン 2 に進むことを推奨します。
+
+30 分で全て実施する時間はないため以下から一つを選択してください。
 
 - 1-1: Cline: [README-claude-code.md](./README-claude-code.md) を新しいタブで開きます
 - 1-2: Claude Code: [README-cline.md](./README-cline.md) を新しいタブで開きます

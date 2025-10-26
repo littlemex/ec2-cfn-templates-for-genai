@@ -278,6 +278,20 @@ Resources:
                 - echo "Claude Code CLI installed globally. Checking configuration"
                 - claude --version || echo "Claude command check completed"
                 - echo "Claude Code CLI installation finished"
+          - name: InstallClineCLI
+            action: aws:runShellScript
+            inputs:
+              timeoutSeconds: 600
+              runCommand:
+                - '#!/bin/bash'
+                - echo "Installing Cline CLI globally..."
+                - npm install -g cline
+                - echo "Cline CLI installed globally. Checking configuration"
+                - cline --version || echo "Cline command check completed"
+                - !Sub |
+                  echo "Cline CLI installation finished"
+                  echo "Note: Users will need to run 'cline auth' manually after logging in to authenticate with their preferred AI model provider"
+                  echo "Cline CLI is now available for user ${CodeServerUser}"
           - name: InstallAmazonQCLI
             action: aws:runShellScript
             inputs:
@@ -469,37 +483,18 @@ Resources:
               runCommand:
                 - '#!/bin/bash'
                 - !Sub |
-                  # Configure Claude Code MCP settings in ~/.claude.json
-                  CLAUDE_CONFIG="/home/${CodeServerUser}/.claude.json"
+                  # Configure MCP server for Claude Code using the correct claude mcp add command
+                  echo "Setting up MCP server for Claude Code..."
                   
-                  # Create basic .claude.json if it doesn't exist
-                  if [ ! -f "$CLAUDE_CONFIG" ]; then
-                    cat > "$CLAUDE_CONFIG" << 'EOF'
-{
-  "projects": {}
-}
-EOF
-                  fi
-                  
-                  # Use jq to add/update MCP server configuration
-                  jq --arg homeFolder "${HomeFolder}" '
-                    .projects[$homeFolder] = {
-                      "mcpServers": {
-                        "aws-docs": {
-                          "type": "stdio",
-                          "command": "uvx",
-                          "args": ["awslabs.aws-documentation-mcp-server@latest"],
-                          "env": {
-                            "FASTMCP_LOG_LEVEL": "ERROR"
-                          }
-                        }
-                      }
-                    }
-                  ' "$CLAUDE_CONFIG" > "${CLAUDE_CONFIG}.tmp" && mv "${CLAUDE_CONFIG}.tmp" "$CLAUDE_CONFIG"
-                  
-                  # Set proper ownership and permissions
-                  chown ${CodeServerUser}:${CodeServerUser} "$CLAUDE_CONFIG"
-                  chmod 644 "$CLAUDE_CONFIG"
+                  # Switch to the code server user and add AWS Documentation MCP server
+                  sudo -u ${CodeServerUser} --login bash -c "
+                    # Add AWS Documentation MCP server using claude mcp add command
+                    claude mcp add --transport stdio aws-docs --scope user -- uvx awslabs.aws-documentation-mcp-server@latest
+                    
+                    echo 'AWS Documentation MCP server added successfully'
+                    echo 'Users can now use /mcp command in Claude Code for authentication if needed'
+                    echo 'MCP server is configured and ready to use'
+                  "
                   
                   echo "Claude Code MCP configuration completed"
 
