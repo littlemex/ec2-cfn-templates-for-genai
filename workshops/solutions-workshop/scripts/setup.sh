@@ -3,8 +3,6 @@
 # =============================================================================
 # 統合セットアップスクリプト
 # - Cline拡張機能のインストール
-# - Web Search MCP サーバーのセットアップ (install.py)
-# - Amazon Q Developer用MCP設定
 # =============================================================================
 
 set -e  # エラー時に停止
@@ -78,11 +76,6 @@ check_prerequisites() {
         error_exit "code-server がインストールされていません"
     fi
     
-    # install.pyの存在確認
-    if [ ! -f "$WORK_DIR/install-search-mcp.py" ]; then
-        error_exit "install-search-mcp.py が $WORK_DIR/ に存在しません"
-    fi
-    
     log_success "前提条件確認完了"
 }
 
@@ -108,81 +101,7 @@ install_extension() {
     fi
 }
 
-# Web Search MCP サーバーのセットアップ
-setup_web_search_mcp() {
-    log_info "Web Search MCP サーバーをセットアップ中..."
-    
-    cd "$WORK_DIR"
-    
-    # install.pyの実行
-    if python3 install-search-mcp.py; then
-        log_success "Web Search MCP サーバーのセットアップ完了"
-    else
-        error_exit "Web Search MCP サーバーのセットアップに失敗しました"
-    fi
-}
 
-# Amazon Q Developer用MCP設定（ラッパースクリプトを使用）
-setup_amazon_q_mcp() {
-    log_info "Amazon Q Developer用MCP設定を作成中..."
-    
-    # .aws/amazonq ディレクトリの作成
-    AMAZONQ_DIR="$HOME_DIR/.aws/amazonq"
-    mkdir -p "$AMAZONQ_DIR"
-    
-    # mcp.json の作成（ラッパースクリプトを使用）
-    MCP_CONFIG_FILE="$AMAZONQ_DIR/mcp.json"
-    
-    log_info "ラッパースクリプトを使用したMCP設定を作成中..."
-    
-    cat > "$MCP_CONFIG_FILE" << EOF
-{
-  "mcpServers": {
-    "awslabs.aws-documentation-mcp-server": {
-      "autoApprove": [
-        "read_documentation",
-        "search_documentation",
-        "recommend"
-      ],
-      "disabled": false,
-      "command": "uvx",
-      "args": [
-        "awslabs.aws-documentation-mcp-server@latest"
-      ],
-      "env": {
-        "FASTMCP_LOG_LEVEL": "ERROR"
-      },
-      "transportType": "stdio"
-    },
-    "web-search": {
-      "command": "bash",
-      "args": ["$WORK_DIR/search-mcp.sh"],
-      "transportType": "stdio",
-      "autoApprove": [
-        "full-web-search",
-        "get-web-search-summaries",
-        "get-single-web-page-content"
-      ],
-      "disabled": false,
-      "env": {
-        "MAX_CONTENT_LENGTH": "10000",
-        "BROWSER_HEADLESS": "true",
-        "MAX_BROWSERS": "3",
-        "BROWSER_FALLBACK_THRESHOLD": "3"
-      }
-    }
-  }
-}
-EOF
-    
-    # 権限設定
-    chown -R "$CODE_SERVER_USER:$CODE_SERVER_USER" "$HOME_DIR/.aws" 2>/dev/null || {
-        log_warning "権限設定に失敗しました。手動で実行してください: sudo chown -R $CODE_SERVER_USER:$CODE_SERVER_USER $HOME_DIR/.aws"
-    }
-    
-    log_success "Amazon Q Developer用MCP設定を作成しました: $MCP_CONFIG_FILE"
-    log_info "Web Search MCPはラッパースクリプト経由で動作します: $WORK_DIR/search-mcp.sh"
-}
 
 # uvxの確認とインストール
 check_install_uvx() {
@@ -231,41 +150,6 @@ check_install_uvx() {
     fi
 }
 
-# Claude Code + Bedrock セットアップ
-setup_claude_code() {
-    log_info "Claude Code + Bedrock セットアップを開始中..."
-    
-    # Claude Code ディレクトリに移動
-    CLAUDE_DIR="/work/ec2-cfn-templates-for-genai/workshops/solutions-workshop"
-    
-    # claude-manager.sh の存在確認
-    if [ ! -f "$CLAUDE_DIR/claude-manager.sh" ]; then
-        log_warning "claude-manager.sh が見つかりません。Claude Code セットアップをスキップします"
-        return 0
-    fi
-    
-    # claude-manager.sh を実行可能にする
-    chmod +x "$CLAUDE_DIR/claude-manager.sh"
-    
-    # Node.js/npm の確認
-    if ! command -v npm &> /dev/null; then
-        log_warning "npm がインストールされていません。Claude Code セットアップをスキップします"
-        log_info "Node.js をインストールしてから claude-manager.sh setup を手動実行してください"
-        return 0
-    fi
-    
-    # Claude Code のセットアップ実行
-    cd "$CLAUDE_DIR"
-    if ./claude-manager.sh setup; then
-        log_success "Claude Code + Bedrock セットアップ完了"
-    else
-        log_warning "Claude Code セットアップに失敗しました。後で手動実行してください:"
-        log_info "  cd $CLAUDE_DIR && ./claude-manager.sh setup"
-    fi
-    
-    # 元のディレクトリに戻る
-    cd "$WORK_DIR"
-}
 
 # インストール状況の表示
 show_installation_summary() {
@@ -275,37 +159,6 @@ show_installation_summary() {
     log_info "インストール済みコンポーネント:"
     echo "  ✅ Cline拡張機能"
     echo "  ✅ Amazon Q Developer拡張機能"
-    echo "  ✅ Web Search MCP サーバー"
-    echo "  ✅ Amazon Q Developer MCP設定"
-    echo "  ✅ Claude Code + Bedrock統合"
-    echo ""
-    
-    log_info "設定ファイル:"
-    echo "  📁 Cline MCP設定: /home/$CODE_SERVER_USER/.local/share/code-server/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json"
-    echo "  📁 Amazon Q MCP設定: /home/$CODE_SERVER_USER/.aws/amazonq/mcp.json"
-    echo "  📁 Claude Code設定: /work/ec2-cfn-templates-for-genai/workshops/solutions-workshop/claude-config.json"
-    echo ""
-    
-    log_info "利用可能なツール:"
-    echo "  🔍 Web Search MCP:"
-    echo "    - full-web-search: 包括的なウェブ検索"
-    echo "    - get-web-search-summaries: 軽量な検索結果"
-    echo "    - get-single-web-page-content: 特定ページの内容取得"
-    echo ""
-    echo "  📚 AWS Documentation MCP (Amazon Q):"
-    echo "    - read_documentation: AWS文書の読み取り"
-    echo "    - search_documentation: AWS文書の検索"
-    echo "    - recommend: 関連文書の推奨"
-    echo ""
-    echo "  🤖 Claude Code CLI:"
-    echo "    - claude: Claude Code対話型セッション"
-    echo "    - claude -p \"prompt\": 直接プロンプト実行"
-    echo "    - ./claude-manager.sh: モデル管理・設定"
-    echo ""
-    
-    log_info "使用方法:"
-    echo "  💻 Claude Code: cd /work/ec2-cfn-templates-for-genai/workshops/solutions-workshop && ./claude-manager.sh list"
-    echo "  📖 ドキュメント: README-claude-code.md を参照"
     echo ""
     
     log_success "code-server を再起動して新しい機能をお試しください！"
@@ -313,7 +166,7 @@ show_installation_summary() {
 
 # メイン実行関数
 main() {
-    echo "🚀 統合セットアップスクリプトを開始します..."
+    echo "� 統合セットアップスクリプトを開始します..."
     echo ""
     
     # 1. 環境設定
@@ -325,19 +178,10 @@ main() {
     # 3. 拡張機能インストール
     install_extension
     
-    # 4. Web Search MCP セットアップ
-    setup_web_search_mcp
-    
-    # 5. uvx の確認とインストール
+    # 4. uvx の確認とインストール
     check_install_uvx
     
-    # 6. Amazon Q Developer MCP設定
-    setup_amazon_q_mcp
-    
-    # 7. Claude Code + Bedrock セットアップ
-    setup_claude_code
-    
-    # 8. インストール完了サマリー
+    # 5. インストール完了サマリー
     show_installation_summary
 }
 
