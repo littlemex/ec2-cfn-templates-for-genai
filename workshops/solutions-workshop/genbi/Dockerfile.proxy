@@ -38,6 +38,8 @@ COPY WrenAI/wren-ui/.prettierrc ./
 COPY WrenAI/wren-ui/tsconfig.json ./
 # Use our custom next.config.js with proxy support
 COPY next.config.proxy.js ./next.config.js
+# Copy custom image loader for basePath support
+COPY image-loader.js ./image-loader.js
 # Override Apollo Client config to use correct API path
 COPY apollo-client-proxy.ts ./src/apollo/client/index.ts
 # Override env.ts to include basePath in fetch calls
@@ -63,9 +65,14 @@ COPY --from=builder /app/public ./public
 
 RUN mkdir .next
 
-# Copy images to basePath location for dual-path access
-RUN mkdir -p ./public/absproxy/3000 && \
-    if [ -d ./public/images ]; then \
+# Copy images to multiple locations for different access patterns
+# /images/ - Direct access without any prefix
+# /proxy/3000/images/ - code-server proxy path
+# /absproxy/3000/images/ - basePath location
+RUN if [ -d ./public/images ]; then \
+      mkdir -p ./public/proxy/3000 && \
+      mkdir -p ./public/absproxy/3000 && \
+      cp -r ./public/images ./public/proxy/3000/images && \
       cp -r ./public/images ./public/absproxy/3000/images; \
     fi
 

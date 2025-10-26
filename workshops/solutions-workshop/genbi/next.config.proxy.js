@@ -17,6 +17,9 @@ const nextConfig = withLess({
   basePath: '/absproxy/3000',
   assetPrefix: '/absproxy/3000',
   staticPageGenerationTimeout: 1000,
+  images: {
+    unoptimized: true,
+  },
   compiler: {
     // Enables the styled-components SWC transform
     styledComponents: {
