@@ -1,0 +1,96 @@
+FROM node:18-bookworm-slim AS base
+
+# Install required packages
+RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
+
+ENV NEXT_TELEMETRY_DISABLED 1
+ENV NODE_ENV production
+
+WORKDIR /app
+
+# Enable corepack to manage yarn versions
+RUN corepack enable
+
+FROM base AS source
+WORKDIR /app
+
+# Copy the Wren UI source code
+COPY WrenAI/wren-ui/.yarnrc.yml WrenAI/wren-ui/package.json WrenAI/wren-ui/yarn.lock ./
+COPY WrenAI/wren-ui/.yarn ./.yarn
+RUN corepack prepare yarn@4.5.3 --activate
+
+FROM source AS deps
+WORKDIR /app
+
+# Install dependencies
+RUN yarn install --immutable
+RUN yarn add sharp
+
+# Build with custom config
+FROM source AS builder
+WORKDIR /app
+COPY --from=deps /app/node_modules ./node_modules
+COPY WrenAI/wren-ui/public ./public
+COPY WrenAI/wren-ui/src ./src
+COPY WrenAI/wren-ui/.eslintrc.json ./
+COPY WrenAI/wren-ui/.eslintignore ./
+COPY WrenAI/wren-ui/.prettierrc ./
+COPY WrenAI/wren-ui/tsconfig.json ./
+# Use our custom next.config.js with proxy support
+COPY next.config.proxy.js ./next.config.js
+# Override Apollo Client config to use correct API path
+COPY apollo-client-proxy.ts ./src/apollo/client/index.ts
+# Override env.ts to include basePath in fetch calls
+COPY env-proxy.ts ./src/utils/env.ts
+# Override hooks to use basePath in EventSource URLs
+COPY useTextBasedAnswerStreamTask-proxy.tsx ./src/hooks/useTextBasedAnswerStreamTask.tsx
+COPY useAskingStreamTask-proxy.tsx ./src/hooks/useAskingStreamTask.tsx
+# Add middleware to handle path rewriting
+COPY middleware-proxy.js ./middleware.js
+
+RUN yarn build
+
+# Production image
+FROM base AS runner
+WORKDIR /app
+
+# Copy yarn configuration files for yarn commands to work
+COPY --from=source /app/.yarnrc.yml ./
+COPY --from=source /app/yarn.lock ./
+COPY --from=source /app/.yarn ./.yarn
+
+COPY --from=builder /app/public ./public
+
+RUN mkdir .next
+
+# Copy images to basePath location for dual-path access
+RUN mkdir -p ./public/absproxy/3000 && \
+    if [ -d ./public/images ]; then \
+      cp -r ./public/images ./public/absproxy/3000/images; \
+    fi
+
+# Copy standalone build
+COPY --from=builder /app/.next/standalone ./
+COPY --from=builder /app/.next/static ./.next/static
+COPY WrenAI/wren-ui/migrations ./migrations
+COPY WrenAI/wren-ui/knexfile.js ./knexfile.js
+
+# Copy knex and its dependencies
+COPY --from=builder /app/node_modules/knex ./node_modules/knex
+COPY --from=builder /app/node_modules/rechoir ./node_modules/rechoir
+COPY --from=builder /app/node_modules/resolve ./node_modules/resolve
+COPY --from=builder /app/node_modules/is-core-module ./node_modules/is-core-module
+COPY --from=builder /app/node_modules/hasown ./node_modules/hasown
+COPY --from=builder /app/node_modules/function-bind ./node_modules/function-bind
+COPY --from=builder /app/node_modules/interpret ./node_modules/interpret
+COPY --from=builder /app/node_modules/resolve-from ./node_modules/resolve-from
+COPY --from=builder /app/node_modules/tildify ./node_modules/tildify
+COPY --from=builder /app/node_modules/getopts ./node_modules/getopts
+COPY --from=builder /app/node_modules/escalade/sync ./node_modules/escalade/sync
+COPY --from=builder /app/node_modules/.yarn-state.yml ./node_modules/.yarn-state.yml
+
+EXPOSE 3000
+
+ENV PORT 3000
+
+CMD yarn knex migrate:latest && HOSTNAME="0.0.0.0" node server.js
