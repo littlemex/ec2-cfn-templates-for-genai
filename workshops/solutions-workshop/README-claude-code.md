@@ -56,7 +56,7 @@ Amazon Bedrock のデータ取扱について、学習に利用されないこ�
 **MCP 設定ファイル**
 
 ```bash
-# CodeServerUser のデフォルトは coder で、Cloudformation テンプレートで定義されています。
+# CODEUSER のデフォルトは coder で、Cloudformation テンプレートで定義されています。
 CODEUSER=coder && ls /home/${CODEUSER}/.claude.json
 ```
 
