@@ -175,21 +175,66 @@ Resources:
                   server {
                       listen 80;
                       listen [::]:80;
-                      # server_name \$\{CloudFrontDistribution.DomainName\};
                       server_name *.cloudfront.net;
-                      location / {
-                        proxy_pass http://localhost:8080/;
-                        proxy_set_header Host \$host;
-                        proxy_set_header Upgrade \$http_upgrade;
-                        proxy_set_header Connection upgrade;
-                        proxy_set_header Accept-Encoding gzip;
+                      
+                      # Debug logs for troubleshooting
+                      access_log /var/log/nginx/wren_access.log;
+                      error_log /var/log/nginx/wren_error.log;
+                      
+                      # WrenAI - Direct image requests (HIGHEST PRIORITY)
+                      location /images/ {
+                          access_log /var/log/nginx/wren_images.log;
+                          proxy_pass http://localhost:3000/absproxy/3000/images/;
+                          proxy_set_header Host \$host;
+                          proxy_set_header X-Real-IP \$remote_addr;
+                          proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+                          proxy_set_header X-Forwarded-Proto \$scheme;
                       }
+                      
+                      # WrenAI - Direct favicon
+                      location = /favicon.ico {
+                          proxy_pass http://localhost:3000/absproxy/3000/favicon.ico;
+                          proxy_set_header Host \$host;
+                          proxy_set_header X-Real-IP \$remote_addr;
+                          proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+                          proxy_set_header X-Forwarded-Proto \$scheme;
+                      }
+                      
+                      # WrenAI - Proxy path images  
+                      location ~ ^/proxy/3000/(images|favicon\.ico)/ {
+                          rewrite ^/proxy/3000/(.*)$ /absproxy/3000/$1 break;
+                          proxy_pass http://localhost:3000;
+                          proxy_set_header Host \$host;
+                          proxy_set_header Upgrade \$http_upgrade;
+                          proxy_set_header Connection upgrade;
+                          proxy_set_header Accept-Encoding gzip;
+                      }
+                      
+                      # WrenAI - Main application
+                      location /proxy/3000/ {
+                          proxy_pass http://localhost:3000/;
+                          proxy_set_header Host \$host;
+                          proxy_set_header Upgrade \$http_upgrade;
+                          proxy_set_header Connection upgrade;
+                          proxy_set_header Accept-Encoding gzip;
+                      }
+                      
+                      # Custom application support
                       location /${DevServerBasePath} {
-                        proxy_pass http://localhost:${DevServerPort}/${DevServerBasePath};
-                        proxy_set_header Host \$host;
-                        proxy_set_header Upgrade \$http_upgrade;
-                        proxy_set_header Connection upgrade;
-                        proxy_set_header Accept-Encoding gzip;
+                          proxy_pass http://localhost:${DevServerPort}/${DevServerBasePath};
+                          proxy_set_header Host \$host;
+                          proxy_set_header Upgrade \$http_upgrade;
+                          proxy_set_header Connection upgrade;
+                          proxy_set_header Accept-Encoding gzip;
+                      }
+                      
+                      # Default - code-server
+                      location / {
+                          proxy_pass http://localhost:8080/;
+                          proxy_set_header Host \$host;
+                          proxy_set_header Upgrade \$http_upgrade;
+                          proxy_set_header Connection upgrade;
+                          proxy_set_header Accept-Encoding gzip;
                       }
                   }
                   EOF
@@ -567,3 +612,4 @@ Outputs:
   CodeServerSSMDocName:
     Description: SSM Document name
     Value: !Ref CodeServerSSMDoc
+
