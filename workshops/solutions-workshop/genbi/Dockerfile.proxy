@@ -15,8 +15,8 @@ FROM base AS source
 WORKDIR /app
 
 # Copy the Wren UI source code
-COPY WrenAI/wren-ui/.yarnrc.yml WrenAI/wren-ui/package.json WrenAI/wren-ui/yarn.lock ./
-COPY WrenAI/wren-ui/.yarn ./.yarn
+COPY wren-ui-source/.yarnrc.yml wren-ui-source/package.json wren-ui-source/yarn.lock ./
+COPY wren-ui-source/.yarn ./.yarn
 RUN corepack prepare yarn@4.5.3 --activate
 
 FROM source AS deps
@@ -30,25 +30,25 @@ RUN yarn add sharp
 FROM source AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
-COPY WrenAI/wren-ui/public ./public
-COPY WrenAI/wren-ui/src ./src
-COPY WrenAI/wren-ui/.eslintrc.json ./
-COPY WrenAI/wren-ui/.eslintignore ./
-COPY WrenAI/wren-ui/.prettierrc ./
-COPY WrenAI/wren-ui/tsconfig.json ./
+COPY wren-ui-source/public ./public
+COPY wren-ui-source/src ./src
+COPY wren-ui-source/.eslintrc.json ./
+COPY wren-ui-source/.eslintignore ./
+COPY wren-ui-source/.prettierrc ./
+COPY wren-ui-source/tsconfig.json ./
 # Use our custom next.config.js with proxy support
-COPY next.config.proxy.js ./next.config.js
+COPY wren-ui-source/next.config.proxy.js ./next.config.js
 # Copy custom image loader for basePath support
-COPY image-loader.js ./image-loader.js
+COPY wren-ui-source/image-loader.js ./image-loader.js
 # Override Apollo Client config to use correct API path
-COPY apollo-client-proxy.ts ./src/apollo/client/index.ts
+COPY wren-ui-source/apollo-client-proxy.ts ./src/apollo/client/index.ts
 # Override env.ts to include basePath in fetch calls
-COPY env-proxy.ts ./src/utils/env.ts
+COPY wren-ui-source/env-proxy.ts ./src/utils/env.ts
 # Override hooks to use basePath in EventSource URLs
-COPY useTextBasedAnswerStreamTask-proxy.tsx ./src/hooks/useTextBasedAnswerStreamTask.tsx
-COPY useAskingStreamTask-proxy.tsx ./src/hooks/useAskingStreamTask.tsx
+COPY wren-ui-source/useTextBasedAnswerStreamTask-proxy.tsx ./src/hooks/useTextBasedAnswerStreamTask.tsx
+COPY wren-ui-source/useAskingStreamTask-proxy.tsx ./src/hooks/useAskingStreamTask.tsx
 # Add middleware to handle path rewriting
-COPY middleware-proxy.js ./middleware.js
+COPY wren-ui-source/middleware-proxy.js ./middleware.js
 
 RUN yarn build
 
@@ -79,8 +79,8 @@ RUN if [ -d ./public/images ]; then \
 # Copy standalone build
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
-COPY WrenAI/wren-ui/migrations ./migrations
-COPY WrenAI/wren-ui/knexfile.js ./knexfile.js
+COPY wren-ui-source/migrations ./migrations
+COPY wren-ui-source/knexfile.js ./knexfile.js
 
 # Copy knex and its dependencies
 COPY --from=builder /app/node_modules/knex ./node_modules/knex
