@@ -66,4 +66,4 @@ echo -e "${GREEN}=== テスト結果サマリー ===${NC}"
 echo "テスト完了時刻: $(date)"
 echo -e "${GREEN}統合テストが完了しました${NC}"
 echo
-echo "UI: http://${CFN_URL}/absproxy/3000/ をオープンしてください。"
+echo "UI: https://${CFN_URL}/absproxy/3000/ をオープンしてください。"
