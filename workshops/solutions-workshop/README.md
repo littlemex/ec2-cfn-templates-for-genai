@@ -4,7 +4,7 @@
 
 ## 概要
 
-一時間でコーディングのための作業環境の起動し、ハンズオン 1 で複数のコーディングエージェントを AWS 内で構築された環境から利用します。ハンズオン 2 では Amazon Bedrock と Amazon S3 のみを用いて Generative BI(GenBI) とはどのようなものかを OSS GenBI ツールを用いて体感します。
+一時間でコーディングのための作業環境の起動し、ハンズオン 1 で複数のコーディングエージェントを AWS 内で構築された環境から利用します。ハンズオン 2 では Amazon Bedrock を用いて Generative BI(GenBI) とはどのようなものかを OSS GenBI ツールを用いて体感します。
 
 ## ハンズオン構成概要
 
@@ -43,7 +43,7 @@ Amazon Q Developer は設定に多少時間がかかります。もし AWS Ident
 
 **💡 ポイント**
 
-- 1. Amazon Bedrock と Amazon S3 のみがあれば Generative BI を体感可能
+- 1. Amazon Bedrock があれば Generative BI を体感可能
 - 2. 組織での利用をご検討の際は Amazon Quick Suite を推奨 ([Workshop Link](https://catalog.us-east-1.prod.workshops.aws/workshops/119307ce-4c43-4e96-887c-cd8454b3d229/en-US))
 
 **Generative BI の体験**
