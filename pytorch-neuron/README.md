@@ -59,6 +59,10 @@ AWS Trainium (TRN1) インスタンス上でPyTorch Neuronを使用する環境�
 
 [PERFORMANCE_PATTERN_ANALYZER.md](./docs/PERFORMANCE_PATTERN_ANALYZER.md) をご確認ください。
 
+## VMAP vs Scan vs For Neuron Profiler 分析
+
+[docs/NEURON_HARDWARE_DEEP_ANALYSIS.md](./docs/docs/NEURON_HARDWARE_DEEP_ANALYSIS.md) をご確認ください。
+
 ### 警告メッセージの理解
 
 TRN1での実行時に表示される警告メッセージ（正常動作）

@@ -197,6 +197,129 @@ except AttributeError:
     pass  # API変更対応
 ```
 
+## 9. TEN404コンパイラエラー知識
+
+### 9.1 TEN404エラーの分類
+
+**TEN404エラー**は、AWS Neuronコンパイラ（neuronx-cc）の内部処理限界を示す重要なエラーパターンです。
+
+#### 主要エラータイプ:
+- **SundaSizeTiling: tuple index out of range**
+  - テンソル最適化処理での配列範囲外アクセス
+  - 複雑なテンソル形状変換時に発生
+
+- **InferIntrinsicOnCC: Internal tensorizer error**
+  - Collective Communication操作の内部処理失敗
+  - 分散処理最適化の限界
+
+- **NeuronValueNumbering: insertAtEnd() incompatible function arguments**
+  - 命令最適化での競合状態
+  - IR（Intermediate Representation）変換エラー
+
+- **TensorInitialization: Expect NeuronReduceMacro**
+  - テンソル初期化の制約違反
+  - Reduce操作の期待値不整合
+
+### 9.2 発生パターンと根本原因
+
+#### 典型的な発生ケース:
+```python
+# 複雑なfor-loop構造（TEN404発生しやすい）
+for i in range(large_iterations):
+    intermediate = torch.matmul(data[i].unsqueeze(0), data[i].unsqueeze(1))
+    processed = torch.sum(intermediate) * complex_scalar_ops
+    result = result + processed  # 複雑な累積処理
+```
+
+#### 根本原因:
+1. **XLA graph fragmentation**: 複雑なループによるグラフ分割
+2. **Tensorizer optimization limits**: 多層最適化の処理限界
+3. **Memory layout conflicts**: メモリレイアウト最適化の競合
+4. **Instruction dependency chains**: 長い依存関係チェーン
+
+### 9.3 実際のエラーメッセージ例
+
+```bash
+2025-10-31T07:17:12Z [TEN404] Internal tensorizer error: InferIntrinsicOnCC
+- Please open a support ticket at https://github.com/aws-neuron/aws-neuron-sdk/issues/new
+
+ERROR ||NEURON_CC_WRAPPER||: Compilation failed for /tmp/.../model.hlo_module.pb after 0 retries
+
+RuntimeError: RunNeuronCCImpl: error condition error != 0
+Command died with <Signals.SIGHUP: 1>
+returned non-zero exit status 70
+```
+
+### 9.4 ワークアラウンド戦略
+
+#### 即座の対策:
+1. **ループ構造の単純化**:
+```python
+# 修正前（TEN404発生）
+for i in range(50):
+    complex_tensor_ops(data[i])
+
+# 修正後（成功率向上）  
+for i in range(5):  # iteration数削減
+    simple_tensor_ops(data[i])
+```
+
+2. **テンソル形状の最適化**:
+```python
+# 修正前
+intermediate = torch.matmul(data[i].unsqueeze(0), data[i].unsqueeze(1))
+
+# 修正後
+intermediate = torch.sum(data[i] * data[i])  # 単純化
+```
+
+3. **Graceful Degradation実装**:
+```python
+try:
+    hardware_result = analyze_complex_pattern(data)
+except CompilationError:
+    return create_simplified_fallback(pattern_name)
+```
+
+### 9.5 GitHub Issues参照リンク
+
+**TEN404エラー事例の詳細情報**:
+
+- **SundaSizeTiling問題**: [Issue #1101](https://github.com/aws-neuron/aws-neuron-sdk/issues/1101)
+  - PyTorchモデルのtrace失敗事例
+  - tuple index out of range詳細
+
+- **NeuronValueNumbering問題**: [Issue #947](https://github.com/aws-neuron/aws-neuron-sdk/issues/947)  
+  - insertAtEnd()互換性問題
+  - 大規模モデルでの発生パターン
+
+- **一般的なTensorizer問題**: [Issue #881](https://github.com/aws-neuron/aws-neuron-sdk/issues/881)
+  - CNN実装での発生事例
+  - シンプルなモデルでの問題
+
+- **OptimizeNKIKernels問題**: [Issue #1114](https://github.com/aws-neuron/aws-neuron-sdk/issues/1114)
+  - max()空シーケンス問題
+  - NKI kernel最適化限界
+
+- **TensorInitialization問題**: [Issue #1058](https://github.com/aws-neuron/aws-neuron-sdk/issues/1058)
+  - NeuronReduceMacro期待値エラー
+  - Stanford CS149課題での発生
+
+### 9.6 実用的な回避指針
+
+#### 開発時の推奨事項:
+1. **段階的複雑度テスト**: 小→中→大規模での検証
+2. **ループ数制限**: iterations < 10での初期テスト
+3. **エラーハンドリング**: try-except による graceful fallback
+4. **代替実装準備**: 複雑パターンの単純化版準備
+
+#### 本番デプロイ時:
+1. **フォールバック機構**: TEN404時の自動代替処理
+2. **監視とアラート**: コンパイル失敗の自動検知
+3. **パフォーマンス分析**: 成功パターンとの比較分析
+
 ## まとめ
 
-このナレッジ抽出により、AWS Neuron環境での深層学習モデル実装における重要な制約、最適化手法、トラブルシューティング方法が体系化されました。特にXLA互換性、vmap制限、コンパイルキャッシュの理解は実用的な開発において重要な知見となります。
+このナレッジ抽出により、AWS Neuron環境での深層学習モデル実装における重要な制約、最適化手法、トラブルシューティング方法が体系化されました。特にXLA互換性、vmap制限、コンパイルキャッシュ、そして**TEN404エラー対策**の理解は実用的な開発において重要な知見となります。
+
+**TEN404エラーは正常な動作範囲内の限界**であり、適切な回避策により実用的なシステム構築が可能です。
