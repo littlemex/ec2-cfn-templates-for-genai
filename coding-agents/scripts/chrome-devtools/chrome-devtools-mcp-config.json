@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "chrome-devtools": {
+      "type": "stdio",
+      "command": "node",
+      "args": [
+        "/work/mcp-servers/chrome-devtools-mcp/build/src/index.js",
+        "--headless=true"
+      ],
+      "env": {}
+    }
+  }
+}
