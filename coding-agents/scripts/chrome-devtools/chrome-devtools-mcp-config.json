@@ -5,7 +5,8 @@
       "command": "node",
       "args": [
         "/work/mcp-servers/chrome-devtools-mcp/build/src/index.js",
-        "--headless=true"
+        "--headless=true",
+        "--font-render-hinting=none"
       ],
       "env": {}
     }

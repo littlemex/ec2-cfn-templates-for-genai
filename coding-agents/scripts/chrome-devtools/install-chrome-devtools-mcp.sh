@@ -97,7 +97,7 @@ if command -v jq &> /dev/null; then
     jq '.mcpServers["chrome-devtools"] = {
       "type": "stdio",
       "command": "node",
-      "args": ["/work/mcp-servers/chrome-devtools-mcp/build/src/index.js", "--headless=true"],
+      "args": ["/work/mcp-servers/chrome-devtools-mcp/build/src/index.js", "--headless=true", "--font-render-hinting=none"],
       "env": {}
     }' "$CLINE_CONFIG" > "$TMP_FILE"
     mv "$TMP_FILE" "$CLINE_CONFIG"
