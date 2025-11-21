@@ -94,12 +94,49 @@ main() {
     
     echo "✅ Found $instance_count Identity Center instance(s)"
     
-    # Get the first (or only) instance
-    instance=$(echo "$instances" | jq -r '.Instances[0]')
+    echo
+    echo "📋 Available SSO Start URLs:"
+    echo "============================"
+    
+    # Display all instances and their start URLs
+    for i in $(seq 0 $((instance_count - 1))); do
+        instance=$(echo "$instances" | jq -r ".Instances[$i]")
+        instance_arn=$(echo "$instance" | jq -r '.InstanceArn')
+        identity_store_id=$(echo "$instance" | jq -r '.IdentityStoreId')
+        region=$(extract_region_from_arn "$instance_arn")
+        start_url="https://${identity_store_id}.awsapps.com/start"
+        
+        echo "[$((i + 1))] Identity Store ID: $identity_store_id"
+        echo "    Start URL: $start_url"
+        echo "    Region: $region"
+        echo
+    done
+    
+    # Select instance
+    selected_index=0
+    if [ "$instance_count" -gt 1 ]; then
+        echo "🤔 Multiple Identity Center instances found."
+        while true; do
+            read -p "Please select an instance (1-$instance_count): " selection
+            if [[ "$selection" =~ ^[0-9]+$ ]] && [ "$selection" -ge 1 ] && [ "$selection" -le "$instance_count" ]; then
+                selected_index=$((selection - 1))
+                break
+            else
+                echo "❌ Invalid selection. Please enter a number between 1 and $instance_count."
+            fi
+        done
+    else
+        echo "✅ Using the only available Identity Center instance."
+        selected_index=0
+    fi
+    
+    # Get selected instance details
+    instance=$(echo "$instances" | jq -r ".Instances[$selected_index]")
     instance_arn=$(echo "$instance" | jq -r '.InstanceArn')
     identity_store_id=$(echo "$instance" | jq -r '.IdentityStoreId')
     
-    echo "📍 Instance ARN: $instance_arn"
+    echo
+    echo "📍 Selected Instance ARN: $instance_arn"
     echo "📍 Identity Store ID: $identity_store_id"
     
     # Extract region from instance ARN
@@ -111,11 +148,11 @@ main() {
     # Get Amazon Q Developer applications
     echo "🔍 Finding Amazon Q Developer applications..."
     applications=$(get_amazon_q_applications "$instance_arn")
-    q_app=$(echo "$applications" | jq -r '.Applications[] | select(.ApplicationProviderArn | contains("codewhisperer")) | select(.Name | contains("QDev")) | .Name' 2>/dev/null | head -1)
+    q_app=$(echo "$applications" | jq -r '.Applications[] | select(.ApplicationProviderArn | contains("codewhisperer")) | .Name' 2>/dev/null | head -1)
     
     if [ -z "$q_app" ] || [ "$q_app" = "null" ]; then
         echo "❌ No Amazon Q Developer application found."
-        echo "💡 Please create a QDevProfile in Identity Center first."
+        echo "💡 Please create an Amazon Q Developer application in Identity Center first."
         exit 1
     fi
     
