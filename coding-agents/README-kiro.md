@@ -1,12 +1,10 @@
-# Amazon Q Developer for CLI 初心者向けセットアップガイド
+# Kiro 初心者向けセットアップガイド(まだ動きません)
 
-*少し内容が古くなっています。ログイン処理までは ./README-kiro.md を合わせて確認ください。
+このガイドでは、プログラミング経験がほとんどない方でも Kiro を使えるようになるまでの手順を、画面の写真付きで詳しく説明します。
 
-このガイドでは、プログラミング経験がほとんどない方でも Amazon Q Developer for CLI を使えるようになるまでの手順を、画面の写真付きで詳しく説明します。
+## 🤔 Kiro とは？
 
-## 🤔 Amazon Q Developer for CLI とは？
-
-Amazon Q Developer for CLI は、Amazon が提供する AI アシスタントです。コマンドライン（文字で指示を出す画面）を使って、プログラミングの質問をしたり、コードの説明を聞いたりできます。
+Kiro は、Amazon が提供する AI アシスタントです。コマンドライン（文字で指示を出す画面）を使って、プログラミングの質問をしたり、コードの説明を聞いたりできます。
 
 ## 📋 始める前に必要なもの
 
@@ -21,10 +19,10 @@ Amazon Q Developer for CLI は、Amazon が提供する AI アシスタントで
 
 1. **作業環境の作成**：クラウド上にプログラミング環境を準備
 2. **作業環境の接続情報取得**：作成した環境にアクセスするための情報を取得
-3. **Amazon Q Developer の初期設定**：AI アシスタントを使うための準備
+3. **Kiro の初期設定**：AI アシスタントを使うための準備
 4. **ユーザー登録**：あなた専用のアカウントを作成
 5. **作業環境への接続**：実際に作業する画面にアクセス
-6. **AI アシスタントへのログイン**：Amazon Q Developer for CLI を使えるようにする
+6. **AI アシスタントへのログイン**：Kiro を使えるようにする
 7. **動作確認**：正しく設定できたかテスト
 
 所要時間：約 30 分（待ち時間含む）
@@ -138,24 +136,24 @@ Step 1 で作業環境の作成を開始しましたが、完成まで約 10 分
 
 ---
 
-## Step 3: Amazon Q Developer の初期設定
+## Step 3: Kiro の初期設定
 
-### Amazon Q Developer とは？
-Amazon Q Developer は、プログラミングに関する質問に答えてくれる AI アシスタントです。このステップでは、その AI アシスタントを使うための初期設定を行います。
+### Kiro とは？
+Kiro は、プログラミングに関する質問に答えてくれる AI アシスタントです。このステップでは、その AI アシスタントを使うための初期設定を行います。
 
 ### 手順
 
-1. **Amazon Q Developer コンソールを開く**
+1. **Kiro コンソールを開く**
    
-   新しいブラウザタブで [Amazon Q Developer コンソール](https://us-east-1.console.aws.amazon.com/amazonq/developer/home?region=us-east-1) にアクセスしてください。
+   新しいブラウザタブで [Kiro コンソール](https://us-east-1.console.aws.amazon.com/amazonq/developer/home?region=us-east-1#) にアクセスしてください。
 
-   ![Amazon Q Developer コンソール](figs/step3-q-dev-setting-1-open-console.png)
+   ![Kiro コンソール](figs/step3-kiro-setting-1-open-console.png)
 
 2. **初期設定を開始**
    
-   画面に表示される「Get Started」ボタンをクリックしてください。
+   画面に表示されるオレンジ色の Kiro 購入ボタンをクリックしてください。
 
-   ![Get Started をクリック](figs/step3-q-dev-setting-2-get-started.png)
+   ![Get Started をクリック](figs/step3-kiro-setting-2-get-started.png)
 
 3. **ユーザー情報を入力**
    
@@ -167,19 +165,23 @@ Amazon Q Developer は、プログラミングに関する質問に答えてく�
    
    入力が完了したら「Continue」をクリックしてください。
 
-   ![ユーザー情報入力](figs/step3-q-dev-setting-3-create-your-user.png)
+   ![ユーザー情報入力](figs/step3-kiro-setting-3-create-your-user.png)
 
-4. **プロファイル作成**
+4. **Kiro プラン選択**
+
+   今回は「Kiro Pro」を選択しますがご自身でどのプランにするか判断してください。
+
+   ![Kiro Plan](figs/step3-kiro-setting-4-kiro-plan.png)
+
+   ![Kiro Subscribe](figs/step3-kiro-setting-4-kiro-plan-subscribe.png)
+
+   ![Kiro Subscribed](figs/step3-kiro-setting-4-kiro-plan-subscribed.png)
    
-   「Create」ボタンをクリックして、Amazon Q Developer のプロファイルを作成してください。
-
-   ![プロファイル作成](figs/step3-q-dev-setting-4-create-q-dev-profile.png)
-
 5. **設定完了の確認**
    
    正常に設定が完了すると、成功画面が表示されます。
 
-   ![設定完了](figs/step3-q-dev-setting-5-success.png)
+   ![設定完了](figs/step3-kiro-setting-5-success.png)
 
 **💡 ポイント**
 - メールアドレスは必ず受信可能なものを使用してください
@@ -197,7 +199,7 @@ Step 3 で入力したメールアドレスに招待メールが届きます。�
 
 1. **招待メールを確認**
    
-   Step 3 で入力したメールアドレスの受信箱を確認してください。「Amazon Q Developer への招待」のようなタイトルのメールが届いているはずです。
+   Step 3 で入力したメールアドレスの受信箱を確認してください。「Invitation to join AWS IAM Identity Center」のようなタイトルのメールが届いているはずです。
 
 2. **招待を受諾**
    
@@ -220,6 +222,10 @@ Step 3 で入力したメールアドレスに招待メールが届きます。�
    ユーザー登録が完了すると、ログイン画面が表示されます。
 
    ![登録完了](figs/step4-create-user-3-success-signup.png)
+
+   登録完了すると AWS コンソールの Kiro 画面でユーザーが登録されているのが確認できます。
+
+   ![ユーザー登録完了](figs/step4-create-user-3-success-console.png)
 
 **⚠️ 重要**
 - この時点ではまだログインしないでください
@@ -273,16 +279,16 @@ Step 1 で作成した作業環境（Code Server）に実際にアクセスし�
 
 **💡 ポイント**
 - **Code Server** は、プロのエンジニアが使う本格的なプログラミング環境をブラウザで再現したものです
-- **ターミナル** は、コンピューターに文字で指示を出すための画面で、Amazon Q Developer for CLI もここで使います
+- **ターミナル** は、コンピューターに文字で指示を出すための画面で、Kiro もここで使います
 - **コード編集** と **コマンド実行** を同じ画面で行えるため、効率的にプログラミング作業ができます
 - この環境では、ファイルの作成・編集・保存、プログラムの実行、デバッグなど、プログラミングに必要なすべての作業が可能です
 
 ---
 
-## Step 6: Amazon Q Developer for CLI へのログイン
+## Step 6: Kiro へのログイン
 
 ### このステップの目的
-作業環境で Amazon Q Developer for CLI を使えるようにするため、先ほど作成したアカウントでログインします。
+作業環境で Kiro を使えるようにするため、先ほど作成したアカウントでログインします。
 
 ### 手順
 
@@ -296,43 +302,23 @@ Step 1 で作成した作業環境（Code Server）に実際にアクセスし�
 
 2. **ログイン支援スクリプトを実行**
    
-   以下のコマンドを入力してください：
+   以下のコマンドを入力してください。
    
    ```bash
-   ./q-login
+    kiro-cli
    ```
 
-3. **質問に答える**
+   エンターを押してください。
+
+   ```bash
+    Welcome to Kiro CLI, let's get you signed in!
+
+    Press enter to continue to the browser or esc to cancel
+   ```
+
+3. **ログインする（ここまででストップ）**
    
-   スクリプトが実行されると、いくつか質問されます。基本的に「y」と入力して「Enter」を押してください。
-
-   ```
-   🤔 Do you want to open MFA settings in browser to configure? (y/N): y
-   ```
-   
-   「y」と入力して「Enter」すると、AWS コンソールが開きます。
-
-   検証アカウントでは作業ステップが増えるため MFA を無効化します。（検証アカウント以外では無効化しないでください）
-   
-   「Configure」→ 「Never」→ 「Save Changes」の順でボタンを押して無効化しましょう。
-
-   ![](figs/step6-q-login-6-mfa-1.png)
-
-   ![](figs/step6-q-login-6-mfa-2.png)
-
-   ![](figs/step6-q-login-6-mfa-3.png)
-
-   ```
-   ✅ Have you disabled MFA (set to 'Never')? (y/N): y
-   ```
-   
-   「y」と入力して「Enter」
-
-   ```
-   🤔 Do you want to execute this command now? (y/N): y
-   ```
-   
-   「y」と入力して「Enter」
+   ...
 
 4. **ブラウザでの認証**
    
@@ -373,7 +359,7 @@ Step 1 で作成した作業環境（Code Server）に実際にアクセスし�
 ## Step 7: 動作確認
 
 ### このステップの目的
-Amazon Q Developer for CLI が正しく設定されているかを確認し、実際に AI アシスタントと会話してみます。
+Kiro が正しく設定されているかを確認し、実際に AI アシスタントと会話してみます。
 
 ### 手順
 
@@ -409,29 +395,11 @@ Amazon Q Developer for CLI が正しく設定されているかを確認し、�
 
 **🎉 おめでとうございます！**
 
-これで Amazon Q Developer for CLI のセットアップが完了しました。AI アシスタントと自由に会話して、プログラミングについて学んでください。
+これで Kiro のセットアップが完了しました。AI アシスタントと自由に会話して、プログラミングについて学んでください。
 
 ---
 
 **以降は手順ではなく補足情報なので読む必要はありません。**
-
-## 📚 覚えておくと便利なコマンド
-
-### Amazon Q Developer for CLI の基本コマンド
-
-```bash
-# 現在のログイン状態を確認
-q whoami
-
-# プロファイル情報を確認
-q profile
-
-# AI アシスタントとチャット
-q chat
-
-# ログアウト
-q logout
-```
 
 ### 作業環境の管理
 
