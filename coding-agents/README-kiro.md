@@ -364,7 +364,6 @@ Step 1 で作成した作業環境（Code Server）に実際にアクセスし�
    
    最後に「アクセスを許可」をクリックしてください。
 
-   ![データアクセス許可](figs/step6-q-login-5-approve-data-access.png)
    ![許可完了](figs/step6-kiro-login-6-approved-request.png)
 
 **💡 ポイント**
