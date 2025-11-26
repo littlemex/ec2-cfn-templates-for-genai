@@ -1,4 +1,4 @@
-# Kiro 初心者向けセットアップガイド(まだ動きません)
+# Kiro 初心者向けセットアップガイド
 
 このガイドでは、プログラミング経験がほとんどない方でも Kiro を使えるようになるまでの手順を、画面の写真付きで詳しく説明します。
 
@@ -302,29 +302,47 @@ Step 1 で作成した作業環境（Code Server）に実際にアクセスし�
 
 2. **ログイン支援スクリプトを実行**
    
-   以下のコマンドを入力してください。
+   以下のコマンドを入力してください：
    
    ```bash
-    kiro-cli
+   ./kiro-login
    ```
 
-   エンターを押してください。
-
-   ```bash
-    Welcome to Kiro CLI, let's get you signed in!
-
-    Press enter to continue to the browser or esc to cancel
-   ```
-
-3. **ログインする（ここまででストップ）**
+3. **質問に答える**
    
-   ...
+   スクリプトが実行されると、いくつか質問されます。基本的に「y」と入力して「Enter」を押してください。
+
+   ```
+   🤔 Do you want to open MFA settings in browser to configure? (y/N): y
+   ```
+   
+   「y」と入力して「Enter」すると、AWS コンソールが開きます。
+
+   検証アカウントでは作業ステップが増えるため MFA を無効化します。（検証アカウント以外では無効化しないでください）
+   
+   「Configure」→ 「Never」→ 「Save Changes」の順でボタンを押して無効化しましょう。
+
+   ![](figs/step6-q-login-6-mfa-1.png)
+
+   ![](figs/step6-q-login-6-mfa-2.png)
+
+   ![](figs/step6-q-login-6-mfa-3.png)
+
+   ```
+   ✅ Have you disabled MFA (set to 'Never')? (y/N): y
+   ```
+   
+   「y」と入力して「Enter」
+
+   ```
+   🤔 Do you want to execute this command now? (y/N): y
+   ```
+   
+   「y」と入力して「Enter」
 
 4. **ブラウザでの認証**
    
    「Do you want code-server to open the external website?」という確認が出たら「Open」をクリックしてください。
-
-   ![外部サイトを開く確認](figs/step6-q-login-1-exec-q-login-cmd.png)
 
 5. **ログイン情報を入力**
    
@@ -347,7 +365,7 @@ Step 1 で作成した作業環境（Code Server）に実際にアクセスし�
    最後に「アクセスを許可」をクリックしてください。
 
    ![データアクセス許可](figs/step6-q-login-5-approve-data-access.png)
-   ![許可完了](figs/step6-q-login-6-approved-request.png)
+   ![許可完了](figs/step6-kiro-login-6-approved-request.png)
 
 **💡 ポイント**
 - MFA（多要素認証）は、セキュリティを高める仕組みですが、今回は学習目的のため無効にします
@@ -372,7 +390,7 @@ Kiro が正しく設定されているかを確認し、実際に AI アシス�
    以下のコマンドを入力してください：
    
    ```bash
-   q chat
+   kiro-cli chat
    ```
 
 3. **AI アシスタントと会話**
@@ -383,7 +401,7 @@ Kiro が正しく設定されているかを確認し、実際に AI アシス�
    - 「Python とは何ですか？」
    - 「簡単なプログラムの例を教えてください」
 
-   ![チャット画面](figs/step7-q-chat.png)
+   ![チャット画面](figs/step7-kiro-cli.png)
 
 4. **チャットの終了**
    
@@ -400,6 +418,24 @@ Kiro が正しく設定されているかを確認し、実際に AI アシス�
 ---
 
 **以降は手順ではなく補足情報なので読む必要はありません。**
+
+## 📚 覚えておくと便利なコマンド
+
+### Kiro の基本コマンド
+
+```bash
+# 現在のログイン状態を確認
+kiro-cli whoami
+
+# プロファイル情報を確認
+kiro-cli profile
+
+# AI アシスタントとチャット
+kiro-cli chat
+
+# ログアウト
+kiro-cli logout
+```
 
 ### 作業環境の管理
 

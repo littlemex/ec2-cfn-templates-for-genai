@@ -23,6 +23,13 @@ Parameters:
     Type: String
     Description: S3 URL for the assets zip file
     Default: ""
+  AICliTool:
+    Type: String
+    Description: AI CLI tool to install (kiro or amazon-q)
+    Default: kiro
+    AllowedValues:
+      - kiro
+      - amazon-q
 
 Resources:
   CodeServerSSMDoc:
@@ -267,86 +274,96 @@ Resources:
                 - echo "Node and npm installed. Checking configuration"
                 - node -v
                 - npm -v
-          - name: InstallAmazonQCLI
+          - name: InstallAICLI
             action: aws:runShellScript
             inputs:
               timeoutSeconds: 600
               runCommand:
                 - '#!/bin/bash'
                 - set -e
-                - echo "Amazon Q Developer CLI インストールを開始します..."
-                
-                # 必要な依存関係をインストール
-                - apt-get update -qq
-                - DEBIAN_FRONTEND=noninteractive apt-get install -y -q wget ca-certificates
-                
-                # Amazon Q CLI がすでにインストールされているかチェック
-                - |
-                  if command -v q &> /dev/null; then
-                    echo "Amazon Q Developer CLI は既にインストールされています"
-                    q --version || echo "バージョン確認に失敗しましたが、コマンドは存在します"
+                - !Sub |
+                  AI_CLI_TOOL="${AICliTool}"
+                  
+                  if [[ "$AI_CLI_TOOL" == "kiro" ]]; then
+                    # Kiro はインストールしない（kiro-login スクリプトで自動インストール）
+                    echo "Kiro CLI は kiro-login スクリプト実行時に自動インストールされます"
+                    echo "Amazon Q Developer CLI との競合を避けるため、ここではインストールをスキップします"
                     exit 0
-                  fi
-                
-                # 一時ディレクトリの作成
-                - TEMP_DIR=$(mktemp -d)
-                - cd "$TEMP_DIR"
-                
-                # Amazon Q CLI .deb パッケージのダウンロード
-                - echo "Amazon Q Developer CLI .deb パッケージをダウンロード中..."
-                - |
-                  if ! wget -q https://desktop-release.q.us-east-1.amazonaws.com/latest/amazon-q.deb; then
-                    echo ".deb パッケージのダウンロードに失敗しました"
-                    rm -rf "$TEMP_DIR"
-                    exit 1
-                  fi
-                
-                # 依存関係の修正（必要に応じて）
-                - echo "依存関係を確認中..."
-                - apt-get install -f -y
-                
-                # .deb パッケージのインストール
-                - echo "Amazon Q Developer CLI をインストール中..."
-                - |
-                  if ! dpkg -i amazon-q.deb; then
-                    echo "dpkg でのインストールに失敗しました。依存関係を修正してリトライします..."
-                    apt-get install -f -y
-                    if ! dpkg -i amazon-q.deb; then
-                      echo "Amazon Q Developer CLI のインストールに失敗しました"
+                  
+                  elif [[ "$AI_CLI_TOOL" == "amazon-q" ]]; then
+                    echo "Amazon Q Developer CLI インストールを開始します..."
+                    
+                    # 必要な依存関係をインストール
+                    apt-get update -qq
+                    DEBIAN_FRONTEND=noninteractive apt-get install -y -q wget ca-certificates
+                    
+                    # Amazon Q CLI がすでにインストールされているかチェック
+                    if command -v q &> /dev/null; then
+                      echo "Amazon Q Developer CLI は既にインストールされています"
+                      q --version || echo "バージョン確認に失敗しましたが、コマンドは存在します"
+                      exit 0
+                    fi
+                    
+                    # 一時ディレクトリの作成
+                    TEMP_DIR=$(mktemp -d)
+                    cd "$TEMP_DIR"
+                    
+                    # Amazon Q CLI .deb パッケージのダウンロード
+                    echo "Amazon Q Developer CLI .deb パッケージをダウンロード中..."
+                    if ! wget -q https://desktop-release.q.us-east-1.amazonaws.com/latest/amazon-q.deb; then
+                      echo ".deb パッケージのダウンロードに失敗しました"
                       rm -rf "$TEMP_DIR"
                       exit 1
                     fi
-                  fi
-                
-                # クリーンアップ
-                - cd /
-                - rm -rf "$TEMP_DIR"
-                
-                # インストール確認
-                - echo "インストールを確認中..."
-                - |
-                  if command -v q &> /dev/null; then
-                    echo "Amazon Q Developer CLI のインストールが完了しました"
-                    q --version || echo "バージョン確認に失敗しましたが、インストールは成功しました"
-                  else
-                    echo "Amazon Q Developer CLI のインストールに失敗しました"
-                    exit 1
-                  fi
-                
-                # 設定ディレクトリの作成とリソース制限設定
-                - !Sub |
-                  echo "Amazon Q Developer CLI の設定を行っています..."
-                  mkdir -p /home/${CodeServerUser}/.config/amazon-q
-                  cat > /home/${CodeServerUser}/.config/amazon-q/config.json << EOF
+                    
+                    # 依存関係の修正（必要に応じて）
+                    echo "依存関係を確認中..."
+                    apt-get install -f -y
+                    
+                    # .deb パッケージのインストール
+                    echo "Amazon Q Developer CLI をインストール中..."
+                    if ! dpkg -i amazon-q.deb; then
+                      echo "dpkg でのインストールに失敗しました。依存関係を修正してリトライします..."
+                      apt-get install -f -y
+                      if ! dpkg -i amazon-q.deb; then
+                        echo "Amazon Q Developer CLI のインストールに失敗しました"
+                        rm -rf "$TEMP_DIR"
+                        exit 1
+                      fi
+                    fi
+                    
+                    # クリーンアップ
+                    cd /
+                    rm -rf "$TEMP_DIR"
+                    
+                    # インストール確認
+                    echo "インストールを確認中..."
+                    if command -v q &> /dev/null; then
+                      echo "Amazon Q Developer CLI のインストールが完了しました"
+                      q --version || echo "バージョン確認に失敗しましたが、インストールは成功しました"
+                    else
+                      echo "Amazon Q Developer CLI のインストールに失敗しました"
+                      exit 1
+                    fi
+                    
+                    # 設定ディレクトリの作成とリソース制限設定
+                    echo "Amazon Q Developer CLI の設定を行っています..."
+                    mkdir -p /home/${CodeServerUser}/.config/amazon-q
+                    cat > /home/${CodeServerUser}/.config/amazon-q/config.json << EOF
                   {
                     "maxMemoryMB": 512,
                     "logLevel": "error",
                     "autoUpdate": false
                   }
                   EOF
-                  chown -R ${CodeServerUser}:${CodeServerUser} /home/${CodeServerUser}/.config/amazon-q
-                
-                - echo "Amazon Q Developer CLI のインストールと設定が完了しました"
+                    chown -R ${CodeServerUser}:${CodeServerUser} /home/${CodeServerUser}/.config/amazon-q
+                    
+                    echo "Amazon Q Developer CLI のインストールと設定が完了しました"
+                  
+                  else
+                    echo "不明な AI CLI ツール: $AI_CLI_TOOL"
+                    exit 1
+                  fi
           - name: Installuv
             action: aws:runShellScript
             inputs:
