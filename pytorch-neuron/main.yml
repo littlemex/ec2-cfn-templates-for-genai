@@ -21,7 +21,7 @@ Parameters:
     Description: Code-server EC2 operating system
     Type: String
     Default: Ubuntu-22
-    AllowedValues: ['Ubuntu-22', 'Ubuntu-24']
+    AllowedValues: ['Ubuntu-22']
   HomeFolder:
     Type: String
     Description: Folder to open in code-server

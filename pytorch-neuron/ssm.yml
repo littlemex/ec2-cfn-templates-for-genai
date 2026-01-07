@@ -67,14 +67,41 @@ Resources:
                 - sed -i "s/#\$nrconf{restart} = 'i';/\$nrconf{restart} = 'a';/" /etc/needrestart/needrestart.conf
                 - echo "Apt helper packages added. Checking configuration"
                 - cat /etc/needrestart/needrestart.conf
+          - name: CleanupDLAMINeuronRepo
+            action: aws:runShellScript
+            inputs:
+              timeoutSeconds: 60
+              runCommand:
+                - '#!/bin/bash'
+                - echo "Removing old Neuron repository configuration from DLAMI..."
+                - rm -f /etc/apt/sources.list.d/neuron.list
+                - echo "Cleanup completed."
           - name: InstallBasePackagesApt
             action: aws:runShellScript
             inputs:
-              timeoutSeconds: 300
+              timeoutSeconds: 600
               runCommand:
                 - '#!/bin/bash'
+                - echo "Waiting for dpkg lock to be released..."
+                - |
+                  # Wait for dpkg lock to be released (max 5 minutes)
+                  timeout=300
+                  elapsed=0
+                  while sudo fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1 || \
+                        sudo fuser /var/lib/apt/lists/lock >/dev/null 2>&1 || \
+                        sudo fuser /var/cache/apt/archives/lock >/dev/null 2>&1; do
+                    if [ $elapsed -ge $timeout ]; then
+                      echo "Timeout waiting for dpkg lock"
+                      break
+                    fi
+                    echo "Waiting for dpkg lock... ($elapsed seconds)"
+                    sleep 5
+                    elapsed=$((elapsed + 5))
+                  done
                 - dpkg --configure -a
-                - apt-get -q update && DEBIAN_FRONTEND=noninteractive apt-get install -y -q curl gnupg whois argon2 unzip nginx openssl locales locales-all apt-transport-https ca-certificates software-properties-common python3-pip nodejs npm graphviz jq
+                - apt-get -q update
+                - DEBIAN_FRONTEND=noninteractive apt-get install -y -q curl gnupg whois argon2 unzip nginx openssl locales locales-all apt-transport-https ca-certificates software-properties-common python3-pip nodejs npm graphviz jq
+                - echo "Base packages installed successfully"
           - name: AddUserApt
             action: aws:runShellScript
             inputs:
@@ -388,54 +415,24 @@ Resources:
           - name: SetupNeuronEnvironment
             action: aws:runShellScript
             inputs:
-              timeoutSeconds: 900
+              timeoutSeconds: 300
               runCommand:
                 - '#!/bin/bash'
-                - echo "Setting up Neuron environment for TRN1 instances..."
+                - echo "Configuring Neuron environment (using DLAMI pre-installed packages)..."
                 
-                # Check if we're on a TRN1 instance by looking for Neuron devices
-                - |
-                  if ls /dev/neuron* &>/dev/null; then
-                    echo "Neuron devices detected. Setting up Neuron environment."
-                    
-                    # Update Neuron SDK if needed
-                    echo "Updating Neuron SDK..."
-                    pip install --upgrade neuron-cc[tensorflow] torch-neuron torchvision
-                    
-                    # Install additional Python packages needed for the notebook
-                    echo "Installing required Python packages..."
-                    pip install einops opencv-python matplotlib jupyter ipykernel
-                    
-                    # Set up Neuron environment variables
-                    echo "Configuring Neuron environment variables..."
-                    cat >> /etc/environment << EOF
-                  NEURON_RT_NUM_CORES=2
-                  NEURON_RT_VISIBLE_CORES=0,1
-                  NEURON_CC_FLAGS="--framework PYTORCH"
+                # Add Neuron paths and activation alias to user profile
+                - !Sub |
+                  cat >> /home/${CodeServerUser}/.bashrc << 'EOF'
+                  
+                  # AWS Neuron environment setup (DLAMI pre-installed)
+                  export PATH=/opt/aws/neuron/bin:$PATH
+                  # Activate pre-installed Neuron PyTorch environment
+                  alias neuron-activate='source /opt/aws_neuronx_venv_pytorch_2_8/bin/activate'
                   EOF
-                    
-                    # Add Neuron paths to user profile
-                    sudo -u ${CodeServerUser} cat >> /home/${CodeServerUser}/.bashrc << EOF
-                  # Neuron environment setup
-                  export NEURON_RT_NUM_CORES=2
-                  export NEURON_RT_VISIBLE_CORES=0,1
-                  export NEURON_CC_FLAGS="--framework PYTORCH"
-                  EOF
-                    
-                    # Install Jupyter kernel for Neuron
-                    echo "Setting up Jupyter kernel for Neuron..."
-                    sudo -u ${CodeServerUser} python -m ipykernel install --user --name neuron --display-name "Python (Neuron)"
-                    
-                    # Verify Neuron installation
-                    echo "Verifying Neuron installation..."
-                    python -c "import torch_neuron; print('PyTorch Neuron version:', torch_neuron.__version__)" || echo "PyTorch Neuron import failed"
-                    neuron-ls || echo "neuron-ls command not found"
-                    
-                    echo "Neuron environment setup completed."
-                  else
-                    echo "No Neuron devices detected. Skipping Neuron setup."
-                  fi
-                - !Sub chown -R ${CodeServerUser}:${CodeServerUser} /home/${CodeServerUser}
+                  
+                  chown -R ${CodeServerUser}:${CodeServerUser} /home/${CodeServerUser}/.bashrc
+                  echo "Neuron environment configuration completed."
+                  echo "DLAMI pre-installed environment: /opt/aws_neuronx_venv_pytorch_2_8"
 
           - name: ConfigureMCPForAmazonQ
             action: aws:runShellScript
@@ -515,23 +512,35 @@ Resources:
                   mkdir -p ${HomeFolder}
                   chown -R ${CodeServerUser}:${CodeServerUser} ${HomeFolder}
 
+                  # Check if AssetZipS3Path is provided
+                  if [[ -z "${AssetZipS3Path}" ]]; then
+                    echo "No AssetZipS3Path provided. Skipping asset download."
+                    exit 0
+                  fi
+
                   # Download assets directly from S3 URL
-                  curl -L ${AssetZipS3Path} -o /tmp/assets.zip
+                  echo "Downloading assets from: ${AssetZipS3Path}"
+                  if ! curl -L "${AssetZipS3Path}" -o /tmp/assets.zip; then
+                    echo "Failed to download assets. Skipping."
+                    exit 0
+                  fi
+
+                  # Verify the downloaded file
+                  if [[ ! -f /tmp/assets.zip ]] || [[ ! -s /tmp/assets.zip ]]; then
+                    echo "Downloaded file is empty or does not exist. Skipping."
+                    exit 0
+                  fi
 
                   # Extract assets to the workshop directory
-                  unzip -o /tmp/assets.zip -d ${HomeFolder}
+                  if ! unzip -o /tmp/assets.zip -d ${HomeFolder}; then
+                    echo "Failed to extract assets. Skipping."
+                    rm -f /tmp/assets.zip
+                    exit 0
+                  fi
 
-                  # Perform CDK Bootstrap
-                  cd /workshop/bedrock-agent-knowledge-base-actions-workshop-main && pnpm install
-                  cdk bootstrap aws://$(aws sts get-caller-identity --query Account --output text)/us-west-2
-                  cd /workshop/bedrock-agent-knowledge-base-actions-workshop-main && pnpm cdk_infra:deploy
-
-                  # Set proper permissions
+                  rm -f /tmp/assets.zip
                   chown -R ${CodeServerUser}:${CodeServerUser} ${HomeFolder}
-
-                  # Verify contents
-                  echo "Assets downloaded and extracted to ${HomeFolder}:"
-                  ls -la ${HomeFolder}
+                  echo "Assets extracted to ${HomeFolder}"
 
   # Install Workshop specific packages here
   SSMDocLambdaRole:
